@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MenuBarView: View {
@@ -7,7 +8,9 @@ struct MenuBarView: View {
     private enum ActivePanel {
         case entryEditor
         case settings
+        case transfer
     }
+    @State private var transferStatusMessage: String?
 
     private var today: LocalDay {
         LocalDay(date: .now, calendar: store.calendar)
@@ -41,6 +44,18 @@ struct MenuBarView: View {
         return todaysEntry.startTime != nil && todaysEntry.endTime == nil
     }
 
+    private var todayStatusTitle: String {
+        guard let todaysEntry else {
+            return "Ready"
+        }
+
+        if todaysEntry.startTime == nil {
+            return "Ready"
+        }
+
+        return todaysEntry.endTime == nil ? "Working" : "Finished"
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: isTodayInProgress ? 60 : 3600)) { context in
             VStack(alignment: .leading, spacing: 16) {
@@ -61,39 +76,52 @@ struct MenuBarView: View {
                     ) { settings in
                         store.updateSettings(settings)
                     }
+                } else if activePanel == .transfer {
+                    TransferPanelView(
+                        statusMessage: transferStatusMessage,
+                        onClose: { activePanel = nil },
+                        onExportJSON: { exportEntries(format: .json) },
+                        onExportCSV: { exportEntries(format: .csv) },
+                        onImportJSON: { importEntries(format: .json) },
+                        onImportCSV: { importEntries(format: .csv) }
+                    )
                 } else {
                     overviewContent(now: context.date)
                 }
             }
             .padding(18)
-            .frame(width: activePanel == nil ? 320 : 360)
+            .frame(width: panelWidth)
             .background(.regularMaterial)
         }
     }
 
     @ViewBuilder
     private func overviewContent(now: Date) -> some View {
+        let totalBalance = store.calculator.totalBalanceMinutes(for: store.entries, now: now)
+        let weekBalance = store.calculator.weekBalanceMinutes(for: store.entries, relativeTo: now, now: now)
+        let monthBalance = store.calculator.monthBalanceMinutes(for: store.entries, relativeTo: now, now: now)
+        let yearBalance = store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: now, now: now)
+
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("LoqClock")
-                    .font(.title3.weight(.semibold))
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("LoqClock")
+                        .font(.title3.weight(.semibold))
 
-                Text(isTodayInProgress ? "Today is running and updates live." : "Manual tracking with fast today actions.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text(isTodayInProgress ? "Today is running and updates live." : "Manual tracking with instant local updates.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                StatusBadge(
+                    title: todayStatusTitle,
+                    tone: statusTone
+                )
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                PlaceholderRow(title: "Stored Entries", value: "\(store.entries.count)")
-                PlaceholderRow(title: "Default Target", value: durationText(store.settings.defaultTargetWorkDurationMinutes))
-                PlaceholderRow(title: "Default Lunch", value: durationText(store.settings.defaultLunchDurationMinutes))
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
+            SectionCard(title: "Today") {
                 if let todaysEntry {
                     let extraBreakSummary = extraBreakSummary(for: todaysEntry)
                     let netWorked = store.calculator.netWorkedMinutes(for: todaysEntry, now: now)
@@ -134,60 +162,116 @@ struct MenuBarView: View {
                 }
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                PlaceholderRow(title: "Total Balance", value: signedDurationText(store.calculator.totalBalanceMinutes(for: store.entries, now: now)))
-                PlaceholderRow(title: "Week Balance", value: signedDurationText(store.calculator.weekBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
-                PlaceholderRow(title: "Month Balance", value: signedDurationText(store.calculator.monthBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
-                PlaceholderRow(title: "Year Balance", value: signedDurationText(store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
+            SectionCard(title: "Leave Times") {
+                if let todaysEntry {
+                    PlaceholderRow(
+                        title: "0 Today",
+                        value: timeText(store.calculator.leaveTimeForZeroToday(for: todaysEntry))
+                    )
+                    PlaceholderRow(
+                        title: "0 This Week",
+                        value: timeText(
+                            store.calculator.leaveTimeForZeroWeek(
+                                todayEntry: todaysEntry,
+                                allEntries: store.entries
+                            )
+                        )
+                    )
+                } else {
+                    PlaceholderRow(title: "Status", value: "Start today to see leave times")
+                }
             }
 
-            Divider()
+            SectionCard(title: "Balances") {
+                PlaceholderRow(title: "Total", value: signedDurationText(totalBalance))
+                PlaceholderRow(title: "Week", value: signedDurationText(weekBalance))
+                PlaceholderRow(title: "Month", value: signedDurationText(monthBalance))
+                PlaceholderRow(title: "Year", value: signedDurationText(yearBalance))
+            }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Button(isTodayInProgress ? "Restart Start" : "Start Day") {
-                        store.startToday(now: now)
-                    }
+            SectionCard(title: "Defaults") {
+                PlaceholderRow(title: "Stored Entries", value: "\(store.entries.count)")
+                PlaceholderRow(title: "Target", value: durationText(store.settings.defaultTargetWorkDurationMinutes))
+                PlaceholderRow(title: "Lunch", value: durationText(store.settings.defaultLunchDurationMinutes))
+            }
 
-                    Button(isTodayInProgress ? "End Day" : "Set End Time") {
-                        store.endToday(now: now)
-                    }
-                    .disabled(todaysEntry == nil && !isTodayInProgress)
-                }
-
-                HStack(spacing: 10) {
-                    Button(todaysEntry == nil ? "Create Today" : "Edit Today") {
-                        if todaysEntry == nil {
-                            _ = store.ensureEntry(for: today)
+            SectionCard(title: "Actions") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        ActionButton(title: isTodayInProgress ? "Restart Start" : "Start Day") {
+                            store.startToday(now: now)
                         }
-                        activePanel = .entryEditor
+
+                        ActionButton(title: isTodayInProgress ? "End Day" : "Set End Time") {
+                            store.endToday(now: now)
+                        }
+                        .disabled(todaysEntry == nil && !isTodayInProgress)
                     }
 
-                    if todaysEntry?.endTime != nil {
-                        Button("Resume Today") {
-                            store.clearTodayEndTime(now: now)
+                    HStack(spacing: 10) {
+                        ActionButton(title: todaysEntry == nil ? "Create Today" : "Edit Today") {
+                            if todaysEntry == nil {
+                                _ = store.ensureEntry(for: today)
+                            }
+                            activePanel = .entryEditor
+                        }
+
+                        if todaysEntry?.endTime != nil {
+                            ActionButton(title: "Resume Today") {
+                                store.clearTodayEndTime(now: now)
+                            }
                         }
                     }
 
-                    Button("Delete Today") {
-                        store.deleteEntry(for: today)
+                    HStack(spacing: 10) {
+                        ActionButton(title: "Settings") {
+                            activePanel = .settings
+                        }
+
+                        ActionButton(title: "Import / Export") {
+                            activePanel = .transfer
+                        }
                     }
-                    .disabled(todaysEntry == nil)
 
-                    Spacer()
+                    HStack(spacing: 10) {
+                        ActionButton(title: "Delete Today", role: .destructive) {
+                            store.deleteEntry(for: today)
+                        }
+                        .disabled(todaysEntry == nil)
 
-                    Button("Settings") {
-                        activePanel = .settings
+                        Spacer()
+
+                        Button("Quit") {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
                     }
                 }
+            }
+
+            if let transferStatusMessage {
+                Text(transferStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Text("Reference: PRODUCT_SPEC.md")
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    private var statusTone: StatusBadge.Tone {
+        guard let todaysEntry else {
+            return .neutral
+        }
+
+        if todaysEntry.startTime == nil {
+            return .neutral
+        }
+
+        return todaysEntry.endTime == nil ? .active : .complete
     }
 
     private func durationText(_ minutes: Int) -> String {
@@ -223,6 +307,118 @@ struct MenuBarView: View {
         let totalMinutes = entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
         return "\(durationText(totalMinutes)) across \(entry.additionalBreaks.count)"
     }
+
+    private func exportEntries(format: EntryTransferFormat) {
+        do {
+            let data = try store.exportStateData(format: format)
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.nameFieldStringValue = "LoqClock-export.\(format.fileExtension)"
+
+            guard panel.runModal() == .OK, let url = panel.url else {
+                transferStatusMessage = EntryTransferError.noFileSelected.localizedDescription
+                return
+            }
+
+            try data.write(to: url, options: .atomic)
+            transferStatusMessage = "Exported \(store.entries.count) entries as \(format.rawValue.uppercased())."
+        } catch {
+            transferStatusMessage = error.localizedDescription
+            showAlert(title: "Export Failed", message: error.localizedDescription)
+        }
+    }
+
+    private func importEntries(format: EntryTransferFormat) {
+        do {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+
+            guard panel.runModal() == .OK, let url = panel.url else {
+                transferStatusMessage = EntryTransferError.noFileSelected.localizedDescription
+                return
+            }
+
+            let data = try Data(contentsOf: url)
+            let payload = try store.transferService.importData(data, format: format)
+            let duplicates = store.duplicateImportDates(for: payload)
+
+            let strategy: ImportConflictStrategy?
+            if duplicates.isEmpty {
+                strategy = .replaceExisting
+            } else {
+                strategy = promptConflictStrategy(for: duplicates)
+            }
+
+            guard let strategy else {
+                transferStatusMessage = "Import cancelled."
+                return
+            }
+
+            let summary = store.applyImportedPayload(payload, strategy: strategy)
+            transferStatusMessage = importStatusMessage(summary)
+        } catch let error as EntryTransferError {
+            transferStatusMessage = error.localizedDescription
+            showAlert(title: "Import Failed", message: error.localizedDescription)
+        } catch {
+            transferStatusMessage = error.localizedDescription
+            showAlert(title: "Import Failed", message: error.localizedDescription)
+        }
+    }
+
+    private func promptConflictStrategy(for duplicates: [LocalDay]) -> ImportConflictStrategy? {
+        let alert = NSAlert()
+        alert.messageText = "Imported dates already exist"
+        alert.informativeText = "Choose how to handle \(duplicates.count) duplicate date(s): \(duplicates.map(\.id).joined(separator: ", "))."
+        alert.addButton(withTitle: "Replace Existing")
+        alert.addButton(withTitle: "Skip Existing")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .replaceExisting
+        case .alertSecondButtonReturn:
+            return .skipExisting
+        default:
+            return nil
+        }
+    }
+
+    private func importStatusMessage(_ summary: ImportApplicationSummary) -> String {
+        var parts: [String] = ["Imported \(summary.importedCount) entries"]
+
+        if summary.replacedCount > 0 {
+            parts.append("replaced \(summary.replacedCount)")
+        }
+
+        if summary.skippedCount > 0 {
+            parts.append("skipped \(summary.skippedCount)")
+        }
+
+        if summary.settingsUpdated {
+            parts.append("updated settings")
+        }
+
+        return parts.joined(separator: ", ") + "."
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.runModal()
+    }
+
+    private var panelWidth: CGFloat {
+        switch activePanel {
+        case .transfer:
+            return 380
+        case .entryEditor, .settings:
+            return 360
+        case nil:
+            return 320
+        }
+    }
 }
 
 private struct PlaceholderRow: View {
@@ -241,5 +437,71 @@ private struct PlaceholderRow: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
         }
+    }
+}
+
+private struct SectionCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                content
+            }
+        }
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.08))
+        )
+    }
+}
+
+private struct StatusBadge: View {
+    enum Tone {
+        case neutral
+        case active
+        case complete
+
+        var color: Color {
+            switch self {
+            case .neutral: return .secondary
+            case .active: return .green
+            case .complete: return .blue
+            }
+        }
+    }
+
+    let title: String
+    let tone: Tone
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(tone.color.opacity(0.14), in: Capsule())
+            .foregroundStyle(tone.color)
+    }
+}
+
+private struct ActionButton: View {
+    let title: String
+    var role: ButtonRole? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Text(title)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }

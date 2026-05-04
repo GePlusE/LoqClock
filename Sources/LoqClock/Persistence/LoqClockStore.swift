@@ -10,6 +10,7 @@ final class LoqClockStore {
     private let persistence: LoqClockPersistence
     let calendar: Calendar
     let calculator: WorkTimeCalculator
+    let transferService: EntryTransferService
 
     init(
         persistence: LoqClockPersistence = .live(),
@@ -18,6 +19,7 @@ final class LoqClockStore {
         self.persistence = persistence
         self.calendar = calendar
         self.calculator = WorkTimeCalculator(calendar: calendar)
+        self.transferService = EntryTransferService()
 
         let state = (try? persistence.load()) ?? AppState()
         self.settings = state.settings
@@ -113,6 +115,64 @@ final class LoqClockStore {
         upsertEntry(for: today, now: now) { entry in
             entry.endTime = nil
         }
+    }
+
+    func exportStateData(format: EntryTransferFormat) throws -> Data {
+        try transferService.exportData(
+            state: AppState(settings: settings, entries: entries),
+            format: format
+        )
+    }
+
+    func duplicateImportDates(for payload: ImportedEntryPayload) -> [LocalDay] {
+        let existingDays = Set(entries.map(\.date))
+        return payload.entries
+            .map(\.date)
+            .filter { existingDays.contains($0) }
+            .sorted()
+    }
+
+    @discardableResult
+    func applyImportedPayload(
+        _ payload: ImportedEntryPayload,
+        strategy: ImportConflictStrategy
+    ) -> ImportApplicationSummary {
+        var importedCount = 0
+        var replacedCount = 0
+        var skippedCount = 0
+
+        for importedEntry in payload.entries {
+            let alreadyExists = entry(for: importedEntry.date) != nil
+
+            if alreadyExists {
+                switch strategy {
+                case .replaceExisting:
+                    createOrUpdateEntry(importedEntry)
+                    importedCount += 1
+                    replacedCount += 1
+                case .skipExisting:
+                    skippedCount += 1
+                }
+            } else {
+                createOrUpdateEntry(importedEntry)
+                importedCount += 1
+            }
+        }
+
+        let settingsUpdated: Bool
+        if let importedSettings = payload.settings {
+            updateSettings(importedSettings)
+            settingsUpdated = true
+        } else {
+            settingsUpdated = false
+        }
+
+        return ImportApplicationSummary(
+            importedCount: importedCount,
+            replacedCount: replacedCount,
+            skippedCount: skippedCount,
+            settingsUpdated: settingsUpdated
+        )
     }
 
     private func save() {

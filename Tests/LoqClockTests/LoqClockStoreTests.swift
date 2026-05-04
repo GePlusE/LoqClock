@@ -145,6 +145,52 @@ struct LoqClockStoreTests {
 
         #expect(store.entry(for: day)?.endTime == nil)
     }
+
+    @Test
+    func importConflictStrategyCanReplaceOrSkipExistingDates() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 9)
+
+        store.createOrUpdateEntry(
+            WorkDayEntry(
+                date: day,
+                startTime: referenceDate,
+                endTime: referenceDate.addingTimeInterval(8 * 60 * 60),
+                targetWorkDurationMinutes: 480,
+                lunchDurationMinutes: 60,
+                notes: "Original"
+            ),
+            now: referenceDate
+        )
+
+        let imported = ImportedEntryPayload(
+            settings: nil,
+            entries: [
+                WorkDayEntry(
+                    date: day,
+                    startTime: referenceDate,
+                    endTime: referenceDate.addingTimeInterval(4 * 60 * 60),
+                    targetWorkDurationMinutes: 240,
+                    lunchDurationMinutes: 0,
+                    notes: "Imported"
+                )
+            ]
+        )
+
+        let skipSummary = store.applyImportedPayload(imported, strategy: .skipExisting)
+        #expect(skipSummary.importedCount == 0)
+        #expect(skipSummary.skippedCount == 1)
+        #expect(store.entry(for: day)?.notes == "Original")
+
+        let replaceSummary = store.applyImportedPayload(imported, strategy: .replaceExisting)
+        #expect(replaceSummary.importedCount == 1)
+        #expect(replaceSummary.replacedCount == 1)
+        #expect(store.entry(for: day)?.notes == "Imported")
+        #expect(store.entry(for: day)?.targetWorkDurationMinutes == 240)
+    }
 }
 
 private let testCalendar = Calendar(identifier: .gregorian)
