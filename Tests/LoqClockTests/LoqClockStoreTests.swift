@@ -1,0 +1,151 @@
+import Foundation
+import Testing
+@testable import LoqClock
+
+@MainActor
+struct LoqClockStoreTests {
+    @Test
+    func defaultsLoadWhenNoStateExists() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+
+        #expect(store.settings == .default)
+        #expect(store.entries.isEmpty)
+    }
+
+    @Test
+    func createUpdateAndDeleteEntryRoundTrips() {
+        let persistence = LoqClockPersistence.memory()
+        let store = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 4)
+
+        var entry = store.ensureEntry(for: day, now: referenceDate)
+        entry.startTime = referenceDate
+        entry.endTime = referenceDate.addingTimeInterval(8 * 60 * 60)
+        entry.targetWorkDurationMinutes = 240
+        entry.lunchDurationMinutes = 15
+        entry.additionalBreaks = [WorkBreak(name: "Coffee", durationMinutes: 10)]
+        store.createOrUpdateEntry(entry, now: referenceDate)
+
+        let reloaded = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(reloaded.entry(for: day)?.targetWorkDurationMinutes == 240)
+        #expect(reloaded.entry(for: day)?.lunchDurationMinutes == 15)
+        #expect(reloaded.entry(for: day)?.additionalBreaks.map(\.name) == ["Coffee"])
+        #expect(reloaded.entry(for: day)?.additionalBreaks.map(\.durationMinutes) == [10])
+
+        reloaded.deleteEntry(for: day)
+
+        let afterDelete = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(afterDelete.entry(for: day) == nil)
+    }
+
+    @Test
+    func updatingSettingsPersistsDefaults() {
+        let persistence = LoqClockPersistence.memory()
+        let store = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        store.updateSettings(
+            AppSettings(
+                defaultTargetWorkDurationMinutes: 360,
+                defaultLunchDurationMinutes: 30
+            )
+        )
+
+        let reloaded = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(reloaded.settings.defaultTargetWorkDurationMinutes == 360)
+        #expect(reloaded.settings.defaultLunchDurationMinutes == 30)
+    }
+
+    @Test
+    func newEntriesUseCurrentSettingsAsPrefill() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 7)
+
+        store.updateSettings(
+            AppSettings(
+                defaultTargetWorkDurationMinutes: 300,
+                defaultLunchDurationMinutes: 45
+            )
+        )
+
+        let entry = store.ensureEntry(for: day, now: referenceDate)
+
+        #expect(entry.targetWorkDurationMinutes == 300)
+        #expect(entry.lunchDurationMinutes == 45)
+    }
+
+    @Test
+    func perDayOverridesFeedIntoCalculations() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 8)
+
+        store.upsertEntry(for: day, now: referenceDate) { entry in
+            entry.startTime = referenceDate
+            entry.endTime = referenceDate.addingTimeInterval(4 * 60 * 60)
+            entry.targetWorkDurationMinutes = 240
+            entry.lunchDurationMinutes = 0
+            entry.additionalBreaks = [WorkBreak(name: "Walk", durationMinutes: 30)]
+        }
+
+        let savedEntry = store.entry(for: day)
+
+        #expect(savedEntry?.targetWorkDurationMinutes == 240)
+        #expect(savedEntry?.lunchDurationMinutes == 0)
+        #expect(savedEntry?.additionalBreaks.map(\.name) == ["Walk"])
+        #expect(savedEntry?.additionalBreaks.map(\.durationMinutes) == [30])
+        #expect(savedEntry.map { store.calculator.dailyBalanceMinutes(for: $0) } == -30)
+    }
+
+    @Test
+    func startAndEndTodayActionsPersistSessionState() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+        let start = referenceDate
+        let end = referenceDate.addingTimeInterval(8 * 60 * 60)
+        let day = LocalDay(date: start, calendar: testCalendar)
+
+        store.startToday(now: start)
+
+        #expect(store.entry(for: day)?.startTime == start)
+        #expect(store.entry(for: day)?.endTime == nil)
+
+        store.endToday(now: end)
+
+        #expect(store.entry(for: day)?.endTime == end)
+
+        store.clearTodayEndTime(now: end)
+
+        #expect(store.entry(for: day)?.endTime == nil)
+    }
+}
+
+private let testCalendar = Calendar(identifier: .gregorian)
+private let referenceDate = Date(timeIntervalSince1970: 1_777_680_000)
