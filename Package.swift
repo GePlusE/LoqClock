@@ -16,6 +16,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "LoqClock"
+        ),
+        .testTarget(
+            name: "LoqClockTests",
+            dependencies: ["LoqClock"]
         )
     ]
 )

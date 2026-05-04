@@ -1,0 +1,78 @@
+import Foundation
+import Testing
+@testable import LoqClock
+
+@MainActor
+struct LoqClockStoreTests {
+    @Test
+    func defaultsLoadWhenNoStateExists() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+
+        #expect(store.settings == .default)
+        #expect(store.entries.isEmpty)
+    }
+
+    @Test
+    func createUpdateAndDeleteEntryRoundTrips() {
+        let persistence = LoqClockPersistence.memory()
+        let store = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 4)
+
+        var entry = store.ensureEntry(for: day, now: referenceDate)
+        entry.startTime = referenceDate
+        entry.endTime = referenceDate.addingTimeInterval(8 * 60 * 60)
+        entry.targetWorkDurationMinutes = 240
+        entry.lunchDurationMinutes = 15
+        store.createOrUpdateEntry(entry, now: referenceDate)
+
+        let reloaded = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(reloaded.entry(for: day)?.targetWorkDurationMinutes == 240)
+        #expect(reloaded.entry(for: day)?.lunchDurationMinutes == 15)
+
+        reloaded.deleteEntry(for: day)
+
+        let afterDelete = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(afterDelete.entry(for: day) == nil)
+    }
+
+    @Test
+    func updatingSettingsPersistsDefaults() {
+        let persistence = LoqClockPersistence.memory()
+        let store = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        store.updateSettings(
+            AppSettings(
+                defaultTargetWorkDurationMinutes: 360,
+                defaultLunchDurationMinutes: 30
+            )
+        )
+
+        let reloaded = LoqClockStore(
+            persistence: persistence,
+            calendar: testCalendar
+        )
+
+        #expect(reloaded.settings.defaultTargetWorkDurationMinutes == 360)
+        #expect(reloaded.settings.defaultLunchDurationMinutes == 30)
+    }
+}
+
+private let testCalendar = Calendar(identifier: .gregorian)
+private let referenceDate = Date(timeIntervalSince1970: 1_777_680_000)
