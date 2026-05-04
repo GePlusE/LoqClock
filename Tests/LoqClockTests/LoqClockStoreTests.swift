@@ -29,6 +29,7 @@ struct LoqClockStoreTests {
         entry.endTime = referenceDate.addingTimeInterval(8 * 60 * 60)
         entry.targetWorkDurationMinutes = 240
         entry.lunchDurationMinutes = 15
+        entry.additionalBreaks = [WorkBreak(name: "Coffee", durationMinutes: 10)]
         store.createOrUpdateEntry(entry, now: referenceDate)
 
         let reloaded = LoqClockStore(
@@ -38,6 +39,8 @@ struct LoqClockStoreTests {
 
         #expect(reloaded.entry(for: day)?.targetWorkDurationMinutes == 240)
         #expect(reloaded.entry(for: day)?.lunchDurationMinutes == 15)
+        #expect(reloaded.entry(for: day)?.additionalBreaks.map(\.name) == ["Coffee"])
+        #expect(reloaded.entry(for: day)?.additionalBreaks.map(\.durationMinutes) == [10])
 
         reloaded.deleteEntry(for: day)
 
@@ -107,13 +110,40 @@ struct LoqClockStoreTests {
             entry.endTime = referenceDate.addingTimeInterval(4 * 60 * 60)
             entry.targetWorkDurationMinutes = 240
             entry.lunchDurationMinutes = 0
+            entry.additionalBreaks = [WorkBreak(name: "Walk", durationMinutes: 30)]
         }
 
         let savedEntry = store.entry(for: day)
 
         #expect(savedEntry?.targetWorkDurationMinutes == 240)
         #expect(savedEntry?.lunchDurationMinutes == 0)
-        #expect(savedEntry.map { store.calculator.dailyBalanceMinutes(for: $0) } == 0)
+        #expect(savedEntry?.additionalBreaks.map(\.name) == ["Walk"])
+        #expect(savedEntry?.additionalBreaks.map(\.durationMinutes) == [30])
+        #expect(savedEntry.map { store.calculator.dailyBalanceMinutes(for: $0) } == -30)
+    }
+
+    @Test
+    func startAndEndTodayActionsPersistSessionState() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar
+        )
+        let start = referenceDate
+        let end = referenceDate.addingTimeInterval(8 * 60 * 60)
+        let day = LocalDay(date: start, calendar: testCalendar)
+
+        store.startToday(now: start)
+
+        #expect(store.entry(for: day)?.startTime == start)
+        #expect(store.entry(for: day)?.endTime == nil)
+
+        store.endToday(now: end)
+
+        #expect(store.entry(for: day)?.endTime == end)
+
+        store.clearTodayEndTime(now: end)
+
+        #expect(store.entry(for: day)?.endTime == nil)
     }
 }
 

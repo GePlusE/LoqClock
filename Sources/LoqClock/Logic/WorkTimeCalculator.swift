@@ -14,7 +14,7 @@ struct WorkTimeCalculator {
 
         let effectiveEndTime = entry.endTime ?? now
         let grossMinutes = max(0, Int(effectiveEndTime.timeIntervalSince(startTime) / 60))
-        return max(0, grossMinutes - entry.lunchDurationMinutes)
+        return max(0, grossMinutes - totalBreakMinutes(for: entry))
     }
 
     func dailyBalanceMinutes(for entry: WorkDayEntry, now: Date = .now) -> Int {
@@ -53,7 +53,7 @@ struct WorkTimeCalculator {
             return nil
         }
 
-        let totalMinutes = entry.targetWorkDurationMinutes + entry.lunchDurationMinutes
+        let totalMinutes = entry.targetWorkDurationMinutes + totalBreakMinutes(for: entry)
         return startTime.addingTimeInterval(TimeInterval(totalMinutes * 60))
     }
 
@@ -73,8 +73,12 @@ struct WorkTimeCalculator {
             }
 
         let requiredNetWorkToday = todayEntry.targetWorkDurationMinutes - weekBalanceBeforeToday
-        let totalMinutes = todayEntry.lunchDurationMinutes + requiredNetWorkToday
+        let totalMinutes = totalBreakMinutes(for: todayEntry) + requiredNetWorkToday
         return startTime.addingTimeInterval(TimeInterval(totalMinutes * 60))
+    }
+
+    func totalBreakMinutes(for entry: WorkDayEntry) -> Int {
+        entry.lunchDurationMinutes + entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
     }
 
     private func filteredEntries(inSameWeekAs referenceDate: Date, from entries: [WorkDayEntry]) -> [WorkDayEntry] {

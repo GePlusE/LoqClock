@@ -48,6 +48,22 @@ struct WorkTimeCalculatorTests {
     }
 
     @Test
+    func additionalBreaksReduceNetWorkedTime() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 5),
+            startTime: date(2026, 5, 5, 9, 0),
+            endTime: date(2026, 5, 5, 18, 0),
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 30,
+            additionalBreaks: [WorkBreak(name: "Coffee", durationMinutes: 15)]
+        )
+
+        #expect(calculator.totalBreakMinutes(for: entry) == 45)
+        #expect(calculator.netWorkedMinutes(for: entry) == 495)
+        #expect(calculator.dailyBalanceMinutes(for: entry) == 15)
+    }
+
+    @Test
     func periodBalancesUseOnlyTrackedDays() {
         let entries = [
             WorkDayEntry(
@@ -95,10 +111,11 @@ struct WorkTimeCalculatorTests {
             startTime: date(2026, 5, 6, 9, 0),
             endTime: nil,
             targetWorkDurationMinutes: 480,
-            lunchDurationMinutes: 60
+            lunchDurationMinutes: 60,
+            additionalBreaks: [WorkBreak(name: "Walk", durationMinutes: 15)]
         )
 
-        #expect(calculator.leaveTimeForZeroToday(for: entry) == date(2026, 5, 6, 18, 0))
+        #expect(calculator.leaveTimeForZeroToday(for: entry) == date(2026, 5, 6, 18, 15))
     }
 
     @Test

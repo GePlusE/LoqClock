@@ -51,6 +51,7 @@ final class LoqClockStore {
                 endTime: entry.endTime,
                 targetWorkDurationMinutes: entry.targetWorkDurationMinutes,
                 lunchDurationMinutes: entry.lunchDurationMinutes,
+                additionalBreaks: entry.additionalBreaks,
                 notes: entry.notes,
                 createdAt: entries[index].createdAt,
                 updatedAt: now
@@ -82,6 +83,36 @@ final class LoqClockStore {
     func updateSettings(_ settings: AppSettings) {
         self.settings = settings
         save()
+    }
+
+    func startToday(now: Date = .now) {
+        let today = LocalDay(date: now, calendar: calendar)
+
+        upsertEntry(for: today, now: now) { entry in
+            entry.startTime = entry.startTime ?? now
+            entry.endTime = nil
+        }
+    }
+
+    func endToday(now: Date = .now) {
+        let today = LocalDay(date: now, calendar: calendar)
+
+        upsertEntry(for: today, now: now) { entry in
+            entry.startTime = entry.startTime ?? now
+            entry.endTime = now
+        }
+    }
+
+    func clearTodayEndTime(now: Date = .now) {
+        let today = LocalDay(date: now, calendar: calendar)
+
+        guard entry(for: today) != nil else {
+            return
+        }
+
+        upsertEntry(for: today, now: now) { entry in
+            entry.endTime = nil
+        }
     }
 
     private func save() {

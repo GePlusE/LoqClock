@@ -2,18 +2,19 @@ import SwiftUI
 
 struct SettingsEditorView: View {
     let settings: AppSettings
+    let onCancel: () -> Void
     let onSave: (AppSettings) -> Void
-
-    @Environment(\.dismiss) private var dismiss
 
     @State private var defaultTargetWorkDurationMinutes: Int
     @State private var defaultLunchDurationMinutes: Int
 
     init(
         settings: AppSettings,
+        onCancel: @escaping () -> Void,
         onSave: @escaping (AppSettings) -> Void
     ) {
         self.settings = settings
+        self.onCancel = onCancel
         self.onSave = onSave
         _defaultTargetWorkDurationMinutes = State(initialValue: settings.defaultTargetWorkDurationMinutes)
         _defaultLunchDurationMinutes = State(initialValue: settings.defaultLunchDurationMinutes)
@@ -21,47 +22,66 @@ struct SettingsEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Settings")
-                .font(.title3.weight(.semibold))
+            HStack {
+                Text("Settings")
+                    .font(.title3.weight(.semibold))
 
-            Form {
-                Stepper(
-                    "Default Target Work: \(durationText(defaultTargetWorkDurationMinutes))",
-                    value: $defaultTargetWorkDurationMinutes,
-                    in: 0...960,
-                    step: 15
-                )
+                Spacer()
 
-                Stepper(
-                    "Default Lunch: \(durationText(defaultLunchDurationMinutes))",
-                    value: $defaultLunchDurationMinutes,
-                    in: 0...240,
-                    step: 15
-                )
+                Button("Close") {
+                    onCancel()
+                }
             }
-            .formStyle(.grouped)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    DurationAdjusterRow(
+                        title: "Default Target Work",
+                        minutes: $defaultTargetWorkDurationMinutes,
+                        range: 0...960
+                    )
+
+                    DurationAdjusterRow(
+                        title: "Default Lunch",
+                        minutes: $defaultLunchDurationMinutes,
+                        range: 0...240
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text("Changes are saved automatically.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
             HStack {
                 Spacer()
 
-                Button("Cancel") {
-                    dismiss()
-                }
-
-                Button("Save") {
-                    onSave(
-                        AppSettings(
-                            defaultTargetWorkDurationMinutes: defaultTargetWorkDurationMinutes,
-                            defaultLunchDurationMinutes: defaultLunchDurationMinutes
-                        )
-                    )
-                    dismiss()
+                Button("Done") {
+                    onCancel()
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 360)
+        .onChange(of: defaultTargetWorkDurationMinutes) { _, newValue in
+            defaultTargetWorkDurationMinutes = max(0, min(960, newValue))
+            persist()
+        }
+        .onChange(of: defaultLunchDurationMinutes) { _, newValue in
+            defaultLunchDurationMinutes = max(0, min(240, newValue))
+            persist()
+        }
+    }
+
+    private func persist() {
+        onSave(
+            AppSettings(
+                defaultTargetWorkDurationMinutes: defaultTargetWorkDurationMinutes,
+                defaultLunchDurationMinutes: defaultLunchDurationMinutes
+            )
+        )
     }
 
     private func durationText(_ minutes: Int) -> String {

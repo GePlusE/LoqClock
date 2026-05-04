@@ -2,8 +2,12 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Bindable var store: LoqClockStore
-    @State private var isShowingEntryEditor = false
-    @State private var isShowingSettingsEditor = false
+    @State private var activePanel: ActivePanel?
+
+    private enum ActivePanel {
+        case entryEditor
+        case settings
+    }
 
     private var today: LocalDay {
         LocalDay(date: .now, calendar: store.calendar)
@@ -29,13 +33,52 @@ struct MenuBarView: View {
         store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: .now)
     }
 
+    private var isTodayInProgress: Bool {
+        guard let todaysEntry else {
+            return false
+        }
+
+        return todaysEntry.startTime != nil && todaysEntry.endTime == nil
+    }
+
     var body: some View {
+        TimelineView(.periodic(from: .now, by: isTodayInProgress ? 60 : 3600)) { context in
+            VStack(alignment: .leading, spacing: 16) {
+                if activePanel == .entryEditor {
+                    EntryEditorView(
+                        day: today,
+                        settings: store.settings,
+                        existingEntry: todaysEntry,
+                        calendar: store.calendar,
+                        onCancel: { activePanel = nil }
+                    ) { entry in
+                        store.createOrUpdateEntry(entry)
+                    }
+                } else if activePanel == .settings {
+                    SettingsEditorView(
+                        settings: store.settings,
+                        onCancel: { activePanel = nil }
+                    ) { settings in
+                        store.updateSettings(settings)
+                    }
+                } else {
+                    overviewContent(now: context.date)
+                }
+            }
+            .padding(18)
+            .frame(width: activePanel == nil ? 320 : 360)
+            .background(.regularMaterial)
+        }
+    }
+
+    @ViewBuilder
+    private func overviewContent(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("LoqClock")
                     .font(.title3.weight(.semibold))
 
-                Text("Core calculations and local persistence are wired up.")
+                Text(isTodayInProgress ? "Today is running and updates live." : "Manual tracking with fast today actions.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -52,29 +95,26 @@ struct MenuBarView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 if let todaysEntry {
-                    PlaceholderRow(
-                        title: "Start",
-                        value: timeText(todaysEntry.startTime)
-                    )
+                    let extraBreakSummary = extraBreakSummary(for: todaysEntry)
+                    let netWorked = store.calculator.netWorkedMinutes(for: todaysEntry, now: now)
+                    let dailyBalance = store.calculator.dailyBalanceMinutes(for: todaysEntry, now: now)
+                    PlaceholderRow(title: "Start", value: timeText(todaysEntry.startTime))
                     PlaceholderRow(
                         title: "End",
-                        value: timeText(todaysEntry.endTime)
+                        value: todaysEntry.endTime == nil && todaysEntry.startTime != nil ? "In progress" : timeText(todaysEntry.endTime)
                     )
-                    PlaceholderRow(
-                        title: "Target",
-                        value: durationText(todaysEntry.targetWorkDurationMinutes)
-                    )
-                    PlaceholderRow(
-                        title: "Lunch",
-                        value: durationText(todaysEntry.lunchDurationMinutes)
-                    )
+                    PlaceholderRow(title: "Target", value: durationText(todaysEntry.targetWorkDurationMinutes))
+                    PlaceholderRow(title: "Lunch", value: durationText(todaysEntry.lunchDurationMinutes))
+                    if let extraBreakSummary {
+                        PlaceholderRow(title: "Extra Breaks", value: extraBreakSummary)
+                    }
                     PlaceholderRow(
                         title: "Net Worked Today",
-                        value: durationText(store.calculator.netWorkedMinutes(for: todaysEntry))
+                        value: durationText(netWorked)
                     )
                     PlaceholderRow(
                         title: "Daily Balance",
-                        value: signedDurationText(store.calculator.dailyBalanceMinutes(for: todaysEntry))
+                        value: signedDurationText(dailyBalance)
                     )
                     PlaceholderRow(
                         title: "Leave at 0 Today",
@@ -97,52 +137,56 @@ struct MenuBarView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                PlaceholderRow(title: "Total Balance", value: signedDurationText(totalBalanceMinutes))
-                PlaceholderRow(title: "Week Balance", value: signedDurationText(weekBalanceMinutes))
-                PlaceholderRow(title: "Month Balance", value: signedDurationText(monthBalanceMinutes))
-                PlaceholderRow(title: "Year Balance", value: signedDurationText(yearBalanceMinutes))
+                PlaceholderRow(title: "Total Balance", value: signedDurationText(store.calculator.totalBalanceMinutes(for: store.entries, now: now)))
+                PlaceholderRow(title: "Week Balance", value: signedDurationText(store.calculator.weekBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
+                PlaceholderRow(title: "Month Balance", value: signedDurationText(store.calculator.monthBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
+                PlaceholderRow(title: "Year Balance", value: signedDurationText(store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: now, now: now)))
             }
 
             Divider()
 
-            HStack(spacing: 10) {
-                Button(todaysEntry == nil ? "Create Today" : "Edit Today") {
-                    isShowingEntryEditor = true
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Button(isTodayInProgress ? "Restart Start" : "Start Day") {
+                        store.startToday(now: now)
+                    }
+
+                    Button(isTodayInProgress ? "End Day" : "Set End Time") {
+                        store.endToday(now: now)
+                    }
+                    .disabled(todaysEntry == nil && !isTodayInProgress)
                 }
 
-                Button("Delete Today") {
-                    store.deleteEntry(for: today)
-                }
-                .disabled(todaysEntry == nil)
+                HStack(spacing: 10) {
+                    Button(todaysEntry == nil ? "Create Today" : "Edit Today") {
+                        if todaysEntry == nil {
+                            _ = store.ensureEntry(for: today)
+                        }
+                        activePanel = .entryEditor
+                    }
 
-                Spacer()
+                    if todaysEntry?.endTime != nil {
+                        Button("Resume Today") {
+                            store.clearTodayEndTime(now: now)
+                        }
+                    }
 
-                Button("Settings") {
-                    isShowingSettingsEditor = true
+                    Button("Delete Today") {
+                        store.deleteEntry(for: today)
+                    }
+                    .disabled(todaysEntry == nil)
+
+                    Spacer()
+
+                    Button("Settings") {
+                        activePanel = .settings
+                    }
                 }
             }
 
             Text("Reference: PRODUCT_SPEC.md")
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
-        }
-        .padding(18)
-        .frame(width: 320)
-        .background(.regularMaterial)
-        .sheet(isPresented: $isShowingEntryEditor) {
-            EntryEditorView(
-                day: today,
-                settings: store.settings,
-                existingEntry: todaysEntry,
-                calendar: store.calendar
-            ) { entry in
-                store.createOrUpdateEntry(entry)
-            }
-        }
-        .sheet(isPresented: $isShowingSettingsEditor) {
-            SettingsEditorView(settings: store.settings) { settings in
-                store.updateSettings(settings)
-            }
         }
     }
 
@@ -169,6 +213,15 @@ struct MenuBarView: View {
         }
 
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func extraBreakSummary(for entry: WorkDayEntry) -> String? {
+        guard !entry.additionalBreaks.isEmpty else {
+            return nil
+        }
+
+        let totalMinutes = entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
+        return "\(durationText(totalMinutes)) across \(entry.additionalBreaks.count)"
     }
 }
 
