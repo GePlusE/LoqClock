@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Bindable var store: LoqClockStore
+    @State private var isShowingEntryEditor = false
+    @State private var isShowingSettingsEditor = false
 
     private var today: LocalDay {
         LocalDay(date: .now, calendar: store.calendar)
@@ -51,6 +53,22 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let todaysEntry {
                     PlaceholderRow(
+                        title: "Start",
+                        value: timeText(todaysEntry.startTime)
+                    )
+                    PlaceholderRow(
+                        title: "End",
+                        value: timeText(todaysEntry.endTime)
+                    )
+                    PlaceholderRow(
+                        title: "Target",
+                        value: durationText(todaysEntry.targetWorkDurationMinutes)
+                    )
+                    PlaceholderRow(
+                        title: "Lunch",
+                        value: durationText(todaysEntry.lunchDurationMinutes)
+                    )
+                    PlaceholderRow(
                         title: "Net Worked Today",
                         value: durationText(store.calculator.netWorkedMinutes(for: todaysEntry))
                     )
@@ -88,17 +106,20 @@ struct MenuBarView: View {
             Divider()
 
             HStack(spacing: 10) {
-                Button(todaysEntry == nil ? "Create Today" : "Refresh Today") {
-                    var entry = store.ensureEntry(for: today)
-                    entry.startTime = entry.startTime ?? .now
-                    entry.endTime = entry.endTime ?? .now.addingTimeInterval(TimeInterval((entry.targetWorkDurationMinutes + entry.lunchDurationMinutes) * 60))
-                    store.createOrUpdateEntry(entry)
+                Button(todaysEntry == nil ? "Create Today" : "Edit Today") {
+                    isShowingEntryEditor = true
                 }
 
                 Button("Delete Today") {
                     store.deleteEntry(for: today)
                 }
                 .disabled(todaysEntry == nil)
+
+                Spacer()
+
+                Button("Settings") {
+                    isShowingSettingsEditor = true
+                }
             }
 
             Text("Reference: PRODUCT_SPEC.md")
@@ -108,6 +129,21 @@ struct MenuBarView: View {
         .padding(18)
         .frame(width: 320)
         .background(.regularMaterial)
+        .sheet(isPresented: $isShowingEntryEditor) {
+            EntryEditorView(
+                day: today,
+                settings: store.settings,
+                existingEntry: todaysEntry,
+                calendar: store.calendar
+            ) { entry in
+                store.createOrUpdateEntry(entry)
+            }
+        }
+        .sheet(isPresented: $isShowingSettingsEditor) {
+            SettingsEditorView(settings: store.settings) { settings in
+                store.updateSettings(settings)
+            }
+        }
     }
 
     private func durationText(_ minutes: Int) -> String {
@@ -141,7 +177,7 @@ private struct PlaceholderRow: View {
     let value: String
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.headline)
 
@@ -150,6 +186,7 @@ private struct PlaceholderRow: View {
             Text(value)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
         }
     }
 }

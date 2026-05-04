@@ -64,6 +64,16 @@ final class LoqClockStore {
         save()
     }
 
+    func upsertEntry(
+        for day: LocalDay,
+        now: Date = .now,
+        mutate: (inout WorkDayEntry) -> Void
+    ) {
+        var entry = entry(for: day) ?? WorkDayEntry.makePlaceholder(for: day, settings: settings, now: now)
+        mutate(&entry)
+        createOrUpdateEntry(entry, now: now)
+    }
+
     func deleteEntry(for day: LocalDay) {
         entries.removeAll(where: { $0.date == day })
         save()
