@@ -9,6 +9,7 @@ final class LoqClockStore {
 
     private let persistence: LoqClockPersistence
     let calendar: Calendar
+    let calculator: WorkTimeCalculator
 
     init(
         persistence: LoqClockPersistence = .live(),
@@ -16,6 +17,7 @@ final class LoqClockStore {
     ) {
         self.persistence = persistence
         self.calendar = calendar
+        self.calculator = WorkTimeCalculator(calendar: calendar)
 
         let state = (try? persistence.load()) ?? AppState()
         self.settings = state.settings
