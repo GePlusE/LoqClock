@@ -10,7 +10,7 @@ The product goal is simple:
 
 ## Current Status
 
-This repository is in pre-implementation setup.
+The MVP app is implemented locally and can be built, packaged, and tested from this repository.
 
 The core product and engineering rules are defined in [PRODUCT_SPEC.md](./PRODUCT_SPEC.md).
 
@@ -69,6 +69,23 @@ Recommended order:
 ## GitHub Backlog
 
 The initial backlog exists as GitHub issues `#1` through `#8`.
+
+## Packaging
+
+Apple Silicon packaging is scriptable from this repo:
+
+1. Build the app bundle and DMG:
+   `./Packaging/build-app.sh`
+2. Validate the generated release artifacts:
+   `./Packaging/validate-release.sh`
+
+Artifacts are written to:
+- `Artifacts/LoqClock.app`
+- `Artifacts/LoqClock-apple-silicon.dmg`
+
+Optional version overrides:
+- `LOQCLOCK_VERSION=0.1.0 ./Packaging/build-app.sh`
+- `LOQCLOCK_BUILD_NUMBER=1 ./Packaging/build-app.sh`
 
 ## For New Codex Sessions
 
