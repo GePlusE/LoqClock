@@ -9,8 +9,12 @@ struct MenuBarView: View {
         case entryEditor
         case settings
         case transfer
+        case history
+        case historyDay
     }
     @State private var transferStatusMessage: String?
+    @State private var historySelectionDate = Date()
+    @State private var historyEditingDay: LocalDay?
 
     private var today: LocalDay {
         LocalDay(date: .now, calendar: store.calendar)
@@ -84,6 +88,41 @@ struct MenuBarView: View {
                         onExportCSV: { exportEntries(format: .csv) },
                         onImportJSON: { importEntries(format: .json) },
                         onImportCSV: { importEntries(format: .csv) }
+                    )
+                } else if activePanel == .history {
+                    HistoryPanelView(
+                        selectedDate: $historySelectionDate,
+                        recentEntries: recentEntries,
+                        calendar: store.calendar,
+                        onClose: { activePanel = nil },
+                        onOpenSelectedDate: {
+                            historyEditingDay = LocalDay(date: historySelectionDate, calendar: store.calendar)
+                            activePanel = .historyDay
+                        },
+                        onOpenEntry: { day in
+                            historySelectionDate = day.date(in: store.calendar) ?? historySelectionDate
+                            historyEditingDay = day
+                            activePanel = .historyDay
+                        }
+                    )
+                } else if activePanel == .historyDay, let editingDay = historyEditingDay {
+                    HistoryDayEditorView(
+                        day: editingDay,
+                        settings: store.settings,
+                        calendar: store.calendar,
+                        existingEntry: store.entry(for: editingDay),
+                        existingDates: Set(store.entries.map(\.date)),
+                        onBack: { activePanel = .history },
+                        onSave: { entry in
+                            store.createOrUpdateEntry(entry)
+                            historySelectionDate = entry.date.date(in: store.calendar) ?? historySelectionDate
+                            self.historyEditingDay = entry.date
+                        },
+                        onDelete: store.entry(for: editingDay) == nil ? nil : {
+                            store.deleteEntry(for: editingDay)
+                            self.historyEditingDay = nil
+                            activePanel = .history
+                        }
                     )
                 } else {
                     overviewContent(now: context.date)
@@ -234,6 +273,12 @@ struct MenuBarView: View {
                     }
 
                     HStack(spacing: 10) {
+                        ActionButton(title: "History") {
+                            historySelectionDate = Date()
+                            historyEditingDay = nil
+                            activePanel = .history
+                        }
+
                         ActionButton(title: "Delete Today", role: .destructive) {
                             store.deleteEntry(for: today)
                         }
@@ -413,11 +458,19 @@ struct MenuBarView: View {
         switch activePanel {
         case .transfer:
             return 380
+        case .historyDay:
+            return 420
+        case .history:
+            return 400
         case .entryEditor, .settings:
             return 360
         case nil:
             return 320
         }
+    }
+
+    private var recentEntries: [WorkDayEntry] {
+        Array(store.entries.sorted { $0.date > $1.date }.prefix(8))
     }
 }
 
