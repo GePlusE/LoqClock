@@ -6,24 +6,34 @@ import Observation
 final class LoqClockStore {
     private(set) var settings: AppSettings
     private(set) var entries: [WorkDayEntry]
+    private(set) var launchAtLoginErrorMessage: String?
 
     private let persistence: LoqClockPersistence
     let calendar: Calendar
     let calculator: WorkTimeCalculator
     let transferService: EntryTransferService
+    let launchAtLoginService: LaunchAtLoginService
 
     init(
         persistence: LoqClockPersistence = .live(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        launchAtLoginService: LaunchAtLoginService = .live()
     ) {
         self.persistence = persistence
         self.calendar = calendar
         self.calculator = WorkTimeCalculator(calendar: calendar)
         self.transferService = EntryTransferService()
+        self.launchAtLoginService = launchAtLoginService
 
         let state = (try? persistence.load()) ?? AppState()
-        self.settings = state.settings
+        var loadedSettings = state.settings
+        loadedSettings.launchAtLoginEnabled = launchAtLoginService.currentState()
+        self.settings = loadedSettings
         self.entries = state.entries.sorted { $0.date < $1.date }
+    }
+
+    var shouldShowLaunchAtLoginPrompt: Bool {
+        !settings.launchAtLoginPromptHandled && !entries.isEmpty
     }
 
     func entry(for day: LocalDay) -> WorkDayEntry? {
@@ -85,6 +95,33 @@ final class LoqClockStore {
     func updateSettings(_ settings: AppSettings) {
         self.settings = settings
         save()
+    }
+
+    @discardableResult
+    func setLaunchAtLoginEnabled(_ enabled: Bool) -> Bool {
+        do {
+            let actualEnabled = try launchAtLoginService.setEnabled(enabled)
+            launchAtLoginErrorMessage = nil
+            settings.launchAtLoginEnabled = actualEnabled
+            save()
+            return actualEnabled
+        } catch {
+            launchAtLoginErrorMessage = error.localizedDescription
+            settings.launchAtLoginEnabled = launchAtLoginService.currentState()
+            save()
+            return settings.launchAtLoginEnabled
+        }
+    }
+
+    func handleLaunchAtLoginPrompt(enable: Bool) {
+        settings.launchAtLoginPromptHandled = true
+        save()
+
+        if enable {
+            _ = setLaunchAtLoginEnabled(true)
+        } else {
+            launchAtLoginErrorMessage = nil
+        }
     }
 
     func startToday(now: Date = .now) {

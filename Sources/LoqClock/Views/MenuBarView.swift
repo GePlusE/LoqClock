@@ -76,9 +76,12 @@ struct MenuBarView: View {
                 } else if activePanel == .settings {
                     SettingsEditorView(
                         settings: store.settings,
+                        launchAtLoginErrorMessage: store.launchAtLoginErrorMessage,
                         onCancel: { activePanel = nil }
                     ) { settings in
                         store.updateSettings(settings)
+                    } onToggleLaunchAtLogin: { enabled in
+                        store.setLaunchAtLoginEnabled(enabled)
                     }
                 } else if activePanel == .transfer {
                     TransferPanelView(
@@ -158,6 +161,35 @@ struct MenuBarView: View {
                     title: todayStatusTitle,
                     tone: statusTone
                 )
+            }
+
+            if store.shouldShowLaunchAtLoginPrompt {
+                SectionCard(title: "Launch at Login") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Launch LoqClock automatically when you log in?")
+                            .font(.subheadline)
+
+                        Text("You can change this later in Settings.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            ActionButton(title: "Enable") {
+                                store.handleLaunchAtLoginPrompt(enable: true)
+                            }
+
+                            ActionButton(title: "Not now") {
+                                store.handleLaunchAtLoginPrompt(enable: false)
+                            }
+                        }
+
+                        if let launchAtLoginErrorMessage = store.launchAtLoginErrorMessage {
+                            Text(launchAtLoginErrorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
 
             SectionCard(title: "Today") {

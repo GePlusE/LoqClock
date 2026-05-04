@@ -8,7 +8,8 @@ struct LoqClockStoreTests {
     func defaultsLoadWhenNoStateExists() {
         let store = LoqClockStore(
             persistence: .memory(),
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
 
         #expect(store.settings == .default)
@@ -20,7 +21,8 @@ struct LoqClockStoreTests {
         let persistence = LoqClockPersistence.memory()
         let store = LoqClockStore(
             persistence: persistence,
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
         let day = LocalDay(year: 2026, month: 5, day: 4)
 
@@ -34,7 +36,8 @@ struct LoqClockStoreTests {
 
         let reloaded = LoqClockStore(
             persistence: persistence,
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
 
         #expect(reloaded.entry(for: day)?.targetWorkDurationMinutes == 240)
@@ -46,7 +49,8 @@ struct LoqClockStoreTests {
 
         let afterDelete = LoqClockStore(
             persistence: persistence,
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
 
         #expect(afterDelete.entry(for: day) == nil)
@@ -57,19 +61,23 @@ struct LoqClockStoreTests {
         let persistence = LoqClockPersistence.memory()
         let store = LoqClockStore(
             persistence: persistence,
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
 
         store.updateSettings(
             AppSettings(
                 defaultTargetWorkDurationMinutes: 360,
-                defaultLunchDurationMinutes: 30
+                defaultLunchDurationMinutes: 30,
+                launchAtLoginEnabled: false,
+                launchAtLoginPromptHandled: false
             )
         )
 
         let reloaded = LoqClockStore(
             persistence: persistence,
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
 
         #expect(reloaded.settings.defaultTargetWorkDurationMinutes == 360)
@@ -80,14 +88,17 @@ struct LoqClockStoreTests {
     func newEntriesUseCurrentSettingsAsPrefill() {
         let store = LoqClockStore(
             persistence: .memory(),
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
         let day = LocalDay(year: 2026, month: 5, day: 7)
 
         store.updateSettings(
             AppSettings(
                 defaultTargetWorkDurationMinutes: 300,
-                defaultLunchDurationMinutes: 45
+                defaultLunchDurationMinutes: 45,
+                launchAtLoginEnabled: false,
+                launchAtLoginPromptHandled: false
             )
         )
 
@@ -101,7 +112,8 @@ struct LoqClockStoreTests {
     func perDayOverridesFeedIntoCalculations() {
         let store = LoqClockStore(
             persistence: .memory(),
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
         let day = LocalDay(year: 2026, month: 5, day: 8)
 
@@ -126,7 +138,8 @@ struct LoqClockStoreTests {
     func startAndEndTodayActionsPersistSessionState() {
         let store = LoqClockStore(
             persistence: .memory(),
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
         let start = referenceDate
         let end = referenceDate.addingTimeInterval(8 * 60 * 60)
@@ -150,7 +163,8 @@ struct LoqClockStoreTests {
     func importConflictStrategyCanReplaceOrSkipExistingDates() {
         let store = LoqClockStore(
             persistence: .memory(),
-            calendar: testCalendar
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
         )
         let day = LocalDay(year: 2026, month: 5, day: 9)
 
@@ -191,7 +205,71 @@ struct LoqClockStoreTests {
         #expect(store.entry(for: day)?.notes == "Imported")
         #expect(store.entry(for: day)?.targetWorkDurationMinutes == 240)
     }
+
+    @Test
+    func launchAtLoginPromptAppearsAfterMeaningfulUseAndCanBeHandled() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
+        )
+
+        #expect(store.shouldShowLaunchAtLoginPrompt == false)
+
+        _ = store.ensureEntry(for: LocalDay(year: 2026, month: 5, day: 4), now: referenceDate)
+
+        #expect(store.shouldShowLaunchAtLoginPrompt == true)
+
+        store.handleLaunchAtLoginPrompt(enable: false)
+
+        #expect(store.shouldShowLaunchAtLoginPrompt == false)
+        #expect(store.settings.launchAtLoginPromptHandled == true)
+    }
+
+    @Test
+    func launchAtLoginToggleTracksActualOutcome() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(initiallyEnabled: false)
+        )
+
+        let enabled = store.setLaunchAtLoginEnabled(true)
+
+        #expect(enabled == true)
+        #expect(store.settings.launchAtLoginEnabled == true)
+        #expect(store.launchAtLoginErrorMessage == nil)
+    }
 }
 
 private let testCalendar = Calendar(identifier: .gregorian)
 private let referenceDate = Date(timeIntervalSince1970: 1_777_680_000)
+
+extension LaunchAtLoginService {
+    static func mock(
+        initiallyEnabled: Bool = false,
+        failOnSet: Bool = false
+    ) -> LaunchAtLoginService {
+        final class Storage {
+            var enabled: Bool
+
+            init(enabled: Bool) {
+                self.enabled = enabled
+            }
+        }
+
+        let storage = Storage(enabled: initiallyEnabled)
+
+        return LaunchAtLoginService(
+            currentState: { storage.enabled },
+            setEnabled: { enabled in
+                if failOnSet {
+                    throw LaunchAtLoginError.registrationFailed("Mock launch-at-login failure.")
+                }
+
+                storage.enabled = enabled
+                return storage.enabled
+            }
+        )
+    }
+}
