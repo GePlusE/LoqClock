@@ -34,6 +34,12 @@ MINIMUM_SYSTEM_VERSION="$(defaults read "$APP_DIR/Contents/Info" LSMinimumSystem
   exit 1
 }
 
+BUNDLE_IDENTIFIER="$(defaults read "$APP_DIR/Contents/Info" CFBundleIdentifier)"
+[[ "$BUNDLE_IDENTIFIER" == "com.gepluse.loqclock" ]] || {
+  echo "Expected bundle identifier com.gepluse.loqclock, found: $BUNDLE_IDENTIFIER" >&2
+  exit 1
+}
+
 mkdir -p "$MOUNT_ROOT"
 
 echo "Mounting DMG for validation..."

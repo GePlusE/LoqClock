@@ -4,12 +4,12 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.gepluse.loqclock</string>
     <key>CFBundleDisplayName</key>
     <string>LoqClock</string>
     <key>CFBundleExecutable</key>
     <string>LoqClock</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.gepluse.loqclock</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

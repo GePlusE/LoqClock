@@ -56,3 +56,14 @@ Current scope:
 - The publish flow does not sign or notarize the app yet.
 - Signing and notarization are tracked separately in issue `#14`.
 - Analytics and auto-update work are tracked separately and are not part of this release flow.
+
+## Signing / Notarization Prep
+
+The prepared but currently blocked signing path is documented in:
+- [Packaging/signing-notarization.md](/Users/gepluse/Coding/LoqClock/Packaging/signing-notarization.md)
+
+You can inspect the future workflow safely with:
+
+```zsh
+./Packaging/sign-and-notarize.sh --dry-run
+```

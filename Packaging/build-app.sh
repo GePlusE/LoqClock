@@ -11,6 +11,7 @@ DMG_PATH="$ARTIFACTS_DIR/LoqClock-apple-silicon.dmg"
 EXECUTABLE_PATH="$BUILD_DIR/arm64-apple-macosx/release/LoqClock"
 PLIST_TEMPLATE="$ROOT_DIR/Packaging/LoqClock-Info.plist"
 PLIST_OUTPUT="$APP_DIR/Contents/Info.plist"
+BUNDLE_IDENTIFIER="${LOQCLOCK_BUNDLE_IDENTIFIER:-com.gepluse.loqclock}"
 
 export HOME=/tmp
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -35,6 +36,7 @@ chmod 755 "$APP_DIR/Contents/MacOS/LoqClock"
 
 plutil -replace CFBundleShortVersionString -string "${LOQCLOCK_VERSION:-0.1.0}" "$PLIST_OUTPUT"
 plutil -replace CFBundleVersion -string "${LOQCLOCK_BUILD_NUMBER:-1}" "$PLIST_OUTPUT"
+plutil -replace CFBundleIdentifier -string "$BUNDLE_IDENTIFIER" "$PLIST_OUTPUT"
 
 echo "Preparing DMG staging folder..."
 cp -R "$APP_DIR" "$DMG_DIR/"
