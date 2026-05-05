@@ -87,6 +87,16 @@ Optional version overrides:
 - `LOQCLOCK_VERSION=0.1.0 ./Packaging/build-app.sh`
 - `LOQCLOCK_BUILD_NUMBER=1 ./Packaging/build-app.sh`
 
+## GitHub Releases
+
+Draft GitHub Release publishing is also scriptable:
+
+1. Review the documented flow in [RELEASE.md](./RELEASE.md)
+2. Dry run the publish helper:
+   `./Packaging/publish-release.sh --version 0.1.0 --notes-file Packaging/release-notes-template.md --dry-run`
+3. Publish the draft release:
+   `./Packaging/publish-release.sh --version 0.1.0 --notes-file Packaging/release-notes-template.md`
+
 ## For New Codex Sessions
 
 Start with:
