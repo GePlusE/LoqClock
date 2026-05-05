@@ -3,29 +3,43 @@ import SwiftUI
 struct SettingsEditorView: View {
     let settings: AppSettings
     let launchAtLoginErrorMessage: String?
+    let updateCheckErrorMessage: String?
+    let updateCheckStatusMessage: String?
     let onCancel: () -> Void
     let onSave: (AppSettings) -> Void
     let onToggleLaunchAtLogin: (Bool) -> Bool
+    let onToggleAutomaticUpdates: (Bool) -> Void
+    let onManualCheckForUpdates: () -> Void
 
     @State private var defaultTargetWorkDurationMinutes: Int
     @State private var defaultLunchDurationMinutes: Int
     @State private var launchAtLoginEnabled: Bool
+    @State private var automaticallyCheckForUpdates: Bool
 
     init(
         settings: AppSettings,
         launchAtLoginErrorMessage: String?,
+        updateCheckErrorMessage: String?,
+        updateCheckStatusMessage: String?,
         onCancel: @escaping () -> Void,
         onSave: @escaping (AppSettings) -> Void,
-        onToggleLaunchAtLogin: @escaping (Bool) -> Bool
+        onToggleLaunchAtLogin: @escaping (Bool) -> Bool,
+        onToggleAutomaticUpdates: @escaping (Bool) -> Void,
+        onManualCheckForUpdates: @escaping () -> Void
     ) {
         self.settings = settings
         self.launchAtLoginErrorMessage = launchAtLoginErrorMessage
+        self.updateCheckErrorMessage = updateCheckErrorMessage
+        self.updateCheckStatusMessage = updateCheckStatusMessage
         self.onCancel = onCancel
         self.onSave = onSave
         self.onToggleLaunchAtLogin = onToggleLaunchAtLogin
+        self.onToggleAutomaticUpdates = onToggleAutomaticUpdates
+        self.onManualCheckForUpdates = onManualCheckForUpdates
         _defaultTargetWorkDurationMinutes = State(initialValue: settings.defaultTargetWorkDurationMinutes)
         _defaultLunchDurationMinutes = State(initialValue: settings.defaultLunchDurationMinutes)
         _launchAtLoginEnabled = State(initialValue: settings.launchAtLoginEnabled)
+        _automaticallyCheckForUpdates = State(initialValue: settings.automaticallyCheckForUpdates)
     }
 
     var body: some View {
@@ -56,6 +70,13 @@ struct SettingsEditorView: View {
                     )
 
                     Toggle("Launch LoqClock automatically at login", isOn: $launchAtLoginEnabled)
+                    Toggle("Check for updates automatically", isOn: $automaticallyCheckForUpdates)
+
+                    Button("Check for Updates…") {
+                        onManualCheckForUpdates()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -64,6 +85,18 @@ struct SettingsEditorView: View {
                 Text(launchAtLoginErrorMessage)
                     .font(.footnote)
                     .foregroundStyle(.red)
+            }
+
+            if let updateCheckErrorMessage {
+                Text(updateCheckErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            if let updateCheckStatusMessage {
+                Text(updateCheckStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Text("Changes are saved automatically.")
@@ -92,6 +125,10 @@ struct SettingsEditorView: View {
         .onChange(of: launchAtLoginEnabled) { _, newValue in
             launchAtLoginEnabled = onToggleLaunchAtLogin(newValue)
         }
+        .onChange(of: automaticallyCheckForUpdates) { _, newValue in
+            onToggleAutomaticUpdates(newValue)
+            persist()
+        }
     }
 
     private func persist() {
@@ -100,7 +137,9 @@ struct SettingsEditorView: View {
                 defaultTargetWorkDurationMinutes: defaultTargetWorkDurationMinutes,
                 defaultLunchDurationMinutes: defaultLunchDurationMinutes,
                 launchAtLoginEnabled: launchAtLoginEnabled,
-                launchAtLoginPromptHandled: settings.launchAtLoginPromptHandled
+                launchAtLoginPromptHandled: settings.launchAtLoginPromptHandled,
+                automaticallyCheckForUpdates: automaticallyCheckForUpdates,
+                lastSuccessfulUpdateCheckAt: settings.lastSuccessfulUpdateCheckAt
             )
         )
     }

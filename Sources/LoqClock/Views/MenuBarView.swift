@@ -143,6 +143,29 @@ struct MenuBarView: View {
                 }
             }
 
+            if let availableUpdate = store.availableUpdate {
+                SectionCard(title: "Update Available") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("LoqClock \(availableUpdate.version) is available to download.")
+                            .font(.subheadline)
+
+                        Text("Your tracked data stays in Application Support, so replacing the app bundle will not reset your saved workdays.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 10) {
+                            ActionButton(title: "Download Update") {
+                                store.openAvailableUpdateDownload()
+                            }
+
+                            ActionButton(title: "Later") {
+                                store.dismissAvailableUpdate()
+                            }
+                        }
+                    }
+                }
+            }
+
             SectionCard(title: "Today") {
                 if let todaysEntry {
                     let extraBreakSummary = extraBreakSummary(for: todaysEntry)
@@ -256,6 +279,20 @@ struct MenuBarView: View {
                     }
 
                     HStack(spacing: 10) {
+                        ActionButton(title: "Check for Updates…") {
+                            Task {
+                                try? await store.checkForUpdates(manual: true)
+                            }
+                        }
+
+                        if store.isCheckingForUpdates {
+                            Text("Checking…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    HStack(spacing: 10) {
                         ActionButton(title: "History") {
                             openWindow(id: "history")
                         }
@@ -278,6 +315,18 @@ struct MenuBarView: View {
 
             if let transferStatusMessage {
                 Text(transferStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let updateCheckErrorMessage = store.updateCheckErrorMessage {
+                Text(updateCheckErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            if let updateCheckStatusMessage = store.updateCheckStatusMessage {
+                Text(updateCheckStatusMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

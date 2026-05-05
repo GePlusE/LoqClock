@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import AppKit
 
 @MainActor
 @Observable
@@ -7,23 +8,30 @@ final class LoqClockStore {
     private(set) var settings: AppSettings
     private(set) var entries: [WorkDayEntry]
     private(set) var launchAtLoginErrorMessage: String?
+    private(set) var availableUpdate: AppReleaseInfo?
+    private(set) var updateCheckErrorMessage: String?
+    private(set) var updateCheckStatusMessage: String?
+    private(set) var isCheckingForUpdates = false
 
     private let persistence: LoqClockPersistence
     let calendar: Calendar
     let calculator: WorkTimeCalculator
     let transferService: EntryTransferService
     let launchAtLoginService: LaunchAtLoginService
+    let appUpdateService: AppUpdateService
 
     init(
         persistence: LoqClockPersistence = .live(),
         calendar: Calendar = .current,
-        launchAtLoginService: LaunchAtLoginService = .live()
+        launchAtLoginService: LaunchAtLoginService = .live(),
+        appUpdateService: AppUpdateService = .live()
     ) {
         self.persistence = persistence
         self.calendar = calendar
         self.calculator = WorkTimeCalculator(calendar: calendar)
         self.transferService = EntryTransferService()
         self.launchAtLoginService = launchAtLoginService
+        self.appUpdateService = appUpdateService
 
         let state = (try? persistence.load()) ?? AppState()
         var loadedSettings = state.settings
@@ -122,6 +130,82 @@ final class LoqClockStore {
         } else {
             launchAtLoginErrorMessage = nil
         }
+    }
+
+    var shouldOfferAutomaticUpdateCheck: Bool {
+        settings.automaticallyCheckForUpdates
+    }
+
+    func shouldPerformAutomaticUpdateCheck(now: Date = .now) -> Bool {
+        guard settings.automaticallyCheckForUpdates else {
+            return false
+        }
+
+        guard let lastSuccessfulUpdateCheckAt = settings.lastSuccessfulUpdateCheckAt else {
+            return true
+        }
+
+        return now.timeIntervalSince(lastSuccessfulUpdateCheckAt) >= 7 * 24 * 60 * 60
+    }
+
+    func performAutomaticUpdateCheckIfNeeded(now: Date = .now) async {
+        guard shouldPerformAutomaticUpdateCheck(now: now) else {
+            return
+        }
+
+        do {
+            try await checkForUpdates(manual: false, now: now)
+        } catch {
+            updateCheckErrorMessage = nil
+            updateCheckStatusMessage = nil
+        }
+    }
+
+    func setAutomaticUpdateChecksEnabled(_ enabled: Bool) {
+        settings.automaticallyCheckForUpdates = enabled
+        save()
+    }
+
+    func checkForUpdates(manual: Bool, now: Date = .now) async throws {
+        guard !isCheckingForUpdates else {
+            return
+        }
+
+        isCheckingForUpdates = true
+        defer { isCheckingForUpdates = false }
+
+        do {
+            let release = try await appUpdateService.fetchLatestStableRelease()
+            let isUpdateAvailable = try appUpdateService.isUpdateAvailable(comparedTo: release)
+            settings.lastSuccessfulUpdateCheckAt = now
+            availableUpdate = isUpdateAvailable ? release : nil
+            updateCheckErrorMessage = nil
+            updateCheckStatusMessage = manual && !isUpdateAvailable ? "LoqClock is up to date." : nil
+            save()
+        } catch {
+            if manual {
+                updateCheckErrorMessage = error.localizedDescription
+                updateCheckStatusMessage = nil
+            } else {
+                updateCheckErrorMessage = nil
+                updateCheckStatusMessage = nil
+            }
+            throw error
+        }
+    }
+
+    func openAvailableUpdateDownload() {
+        guard let url = availableUpdate?.downloadURL ?? availableUpdate?.releasePageURL else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
+
+    func dismissAvailableUpdate() {
+        availableUpdate = nil
+        updateCheckErrorMessage = nil
+        updateCheckStatusMessage = nil
     }
 
     func startToday(now: Date = .now) {

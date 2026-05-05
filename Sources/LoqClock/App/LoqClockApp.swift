@@ -13,6 +13,9 @@ struct LoqClockApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(store: store)
+                .task {
+                    await store.performAutomaticUpdateCheckIfNeeded()
+                }
         } label: {
             Image(systemName: "deskclock")
                 .accessibilityLabel("LoqClock")

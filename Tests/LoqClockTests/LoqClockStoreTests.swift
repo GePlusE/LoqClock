@@ -70,7 +70,9 @@ struct LoqClockStoreTests {
                 defaultTargetWorkDurationMinutes: 360,
                 defaultLunchDurationMinutes: 30,
                 launchAtLoginEnabled: false,
-                launchAtLoginPromptHandled: false
+                launchAtLoginPromptHandled: false,
+                automaticallyCheckForUpdates: true,
+                lastSuccessfulUpdateCheckAt: nil
             )
         )
 
@@ -98,7 +100,9 @@ struct LoqClockStoreTests {
                 defaultTargetWorkDurationMinutes: 300,
                 defaultLunchDurationMinutes: 45,
                 launchAtLoginEnabled: false,
-                launchAtLoginPromptHandled: false
+                launchAtLoginPromptHandled: false,
+                automaticallyCheckForUpdates: true,
+                lastSuccessfulUpdateCheckAt: nil
             )
         )
 
@@ -240,6 +244,100 @@ struct LoqClockStoreTests {
         #expect(store.settings.launchAtLoginEnabled == true)
         #expect(store.launchAtLoginErrorMessage == nil)
     }
+
+    @Test
+    func automaticUpdateChecksAreEnabledByDefault() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock()
+        )
+
+        #expect(store.shouldPerformAutomaticUpdateCheck(now: referenceDate) == true)
+    }
+
+    @Test
+    func automaticUpdateCheckWaitsSevenDaysAfterSuccess() {
+        let lastCheck = referenceDate
+        let store = LoqClockStore(
+            persistence: .memory(
+                initialState: AppState(
+                    settings: AppSettings(
+                        defaultTargetWorkDurationMinutes: 480,
+                        defaultLunchDurationMinutes: 60,
+                        launchAtLoginEnabled: false,
+                        launchAtLoginPromptHandled: false,
+                        automaticallyCheckForUpdates: true,
+                        lastSuccessfulUpdateCheckAt: lastCheck
+                    )
+                )
+            ),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock()
+        )
+
+        #expect(store.shouldPerformAutomaticUpdateCheck(now: lastCheck.addingTimeInterval(6 * 24 * 60 * 60)) == false)
+        #expect(store.shouldPerformAutomaticUpdateCheck(now: lastCheck.addingTimeInterval(7 * 24 * 60 * 60)) == true)
+    }
+
+    @Test
+    func manualUpdateCheckStoresAvailableReleaseAndTimestamp() async throws {
+        let release = AppReleaseInfo(
+            version: "v9.9.9",
+            releasePageURL: URL(string: "https://example.com/release")!,
+            downloadURL: URL(string: "https://example.com/release.dmg")!,
+            publishedAt: nil
+        )
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock(
+                currentVersion: "0.1.0",
+                latestRelease: release
+            )
+        )
+
+        try await store.checkForUpdates(manual: true, now: referenceDate)
+
+        #expect(store.availableUpdate == release)
+        #expect(store.settings.lastSuccessfulUpdateCheckAt == referenceDate)
+        #expect(store.updateCheckErrorMessage == nil)
+        #expect(store.updateCheckStatusMessage == nil)
+    }
+
+    @Test
+    func manualUpdateCheckReportsErrors() async {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock(error: AppUpdateError.invalidResponse)
+        )
+
+        await #expect(throws: AppUpdateError.self) {
+            try await store.checkForUpdates(manual: true, now: referenceDate)
+        }
+
+        #expect(store.updateCheckErrorMessage == AppUpdateError.invalidResponse.localizedDescription)
+    }
+
+    @Test
+    func manualUpdateCheckReportsUpToDateStatus() async throws {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock(currentVersion: "0.1.0")
+        )
+
+        try await store.checkForUpdates(manual: true, now: referenceDate)
+
+        #expect(store.availableUpdate == nil)
+        #expect(store.updateCheckStatusMessage == "LoqClock is up to date.")
+    }
 }
 
 private let testCalendar = Calendar(identifier: .gregorian)
@@ -269,6 +367,30 @@ extension LaunchAtLoginService {
 
                 storage.enabled = enabled
                 return storage.enabled
+            }
+        )
+    }
+}
+
+extension AppUpdateService {
+    static func mock(
+        currentVersion: String = "0.1.0",
+        latestRelease: AppReleaseInfo = AppReleaseInfo(
+            version: "v0.1.0",
+            releasePageURL: URL(string: "https://example.com/release")!,
+            downloadURL: URL(string: "https://example.com/release.dmg")!,
+            publishedAt: nil
+        ),
+        error: Error? = nil
+    ) -> AppUpdateService {
+        AppUpdateService(
+            currentVersion: { currentVersion },
+            fetchLatestStableRelease: {
+                if let error {
+                    throw error
+                }
+
+                return latestRelease
             }
         )
     }
