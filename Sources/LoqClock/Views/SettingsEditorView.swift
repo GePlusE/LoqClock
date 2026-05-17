@@ -15,6 +15,21 @@ struct SettingsEditorView: View {
     @State private var defaultLunchDurationMinutes: Int
     @State private var launchAtLoginEnabled: Bool
     @State private var automaticallyCheckForUpdates: Bool
+    @State private var liveBreakDeductionThresholdMinutes: Int
+    @State private var selectedSection: SettingsSection = .general
+
+    private enum SettingsSection: String, CaseIterable, Identifiable {
+        case general = "General"
+        case timeTracking = "Time Tracking"
+        case notifications = "Notifications"
+        case backupExport = "Backup & Export"
+        case analytics = "Analytics"
+        case updates = "Updates"
+        case permissions = "Permissions"
+        case advanced = "Advanced / Data Reset"
+
+        var id: String { rawValue }
+    }
 
     init(
         settings: AppSettings,
@@ -40,80 +55,76 @@ struct SettingsEditorView: View {
         _defaultLunchDurationMinutes = State(initialValue: settings.defaultLunchDurationMinutes)
         _launchAtLoginEnabled = State(initialValue: settings.launchAtLoginEnabled)
         _automaticallyCheckForUpdates = State(initialValue: settings.automaticallyCheckForUpdates)
+        _liveBreakDeductionThresholdMinutes = State(initialValue: settings.liveBreakDeductionThresholdMinutes)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Settings")
                     .font(.title3.weight(.semibold))
+                    .padding(.bottom, 8)
+
+                ForEach(SettingsSection.allCases) { section in
+                    Button {
+                        selectedSection = section
+                    } label: {
+                        Text(section.rawValue)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                selectedSection == section ? Color.primary.opacity(0.10) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Spacer()
 
                 Button("Close") {
                     onCancel()
                 }
-            }
-
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    DurationAdjusterRow(
-                        title: "Default Target Work",
-                        minutes: $defaultTargetWorkDurationMinutes,
-                        range: 0...960
-                    )
-
-                    DurationAdjusterRow(
-                        title: "Default Lunch",
-                        minutes: $defaultLunchDurationMinutes,
-                        range: 0...240
-                    )
-
-                    Toggle("Launch LoqClock automatically at login", isOn: $launchAtLoginEnabled)
-                    Toggle("Check for updates automatically", isOn: $automaticallyCheckForUpdates)
-
-                    Button("Check for Updates…") {
-                        onManualCheckForUpdates()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if let launchAtLoginErrorMessage {
-                Text(launchAtLoginErrorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-
-            if let updateCheckErrorMessage {
-                Text(updateCheckErrorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-
-            if let updateCheckStatusMessage {
-                Text(updateCheckStatusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Changes are saved automatically.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Spacer()
-
-                Button("Done") {
-                    onCancel()
-                }
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(18)
+            .frame(width: 190)
+            .background(.thinMaterial)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    settingsContent
+
+                    if let launchAtLoginErrorMessage {
+                        Text(launchAtLoginErrorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
+                    if let updateCheckErrorMessage {
+                        Text(updateCheckErrorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
+                    if let updateCheckStatusMessage {
+                        Text(updateCheckStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Changes are saved automatically.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(20)
-        .frame(width: 360)
+        .frame(width: 700, height: 470)
         .onChange(of: defaultTargetWorkDurationMinutes) { _, newValue in
             defaultTargetWorkDurationMinutes = max(0, min(960, newValue))
             persist()
@@ -129,6 +140,82 @@ struct SettingsEditorView: View {
             onToggleAutomaticUpdates(newValue)
             persist()
         }
+        .onChange(of: liveBreakDeductionThresholdMinutes) { _, newValue in
+            liveBreakDeductionThresholdMinutes = max(0, min(960, newValue))
+            persist()
+        }
+    }
+
+    @ViewBuilder
+    private var settingsContent: some View {
+        switch selectedSection {
+        case .general:
+            SettingsSectionContent(title: "General") {
+                Toggle("Launch LoqClock automatically at login", isOn: $launchAtLoginEnabled)
+                Text("LoqClock stays local and uses an icon-only menu bar presence.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        case .timeTracking:
+            SettingsSectionContent(title: "Time Tracking") {
+                DurationAdjusterRow(
+                    title: "Default Target Work",
+                    minutes: $defaultTargetWorkDurationMinutes,
+                    range: 0...960
+                )
+
+                DurationAdjusterRow(
+                    title: "Default Planned Break",
+                    minutes: $defaultLunchDurationMinutes,
+                    range: 0...240
+                )
+
+                DurationAdjusterRow(
+                    title: "Live Break Threshold",
+                    minutes: $liveBreakDeductionThresholdMinutes,
+                    range: 0...960
+                )
+
+                Text("Single active sessions subtract the planned break only after this threshold. Multi-session days use gaps as breaks.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        case .notifications:
+            SettingsSectionContent(title: "Notifications") {
+                Text("Reminder and notification preferences will live here once notification scheduling is implemented.")
+                    .foregroundStyle(.secondary)
+            }
+        case .backupExport:
+            SettingsSectionContent(title: "Backup & Export") {
+                Text("LoqClock creates local JSON recovery backups before risky changes and keeps the latest five.")
+                    .foregroundStyle(.secondary)
+            }
+        case .analytics:
+            SettingsSectionContent(title: "Analytics") {
+                Text("Analytics color and timeframe preferences will live here as charts mature.")
+                    .foregroundStyle(.secondary)
+            }
+        case .updates:
+            SettingsSectionContent(title: "Updates") {
+                Toggle("Check for updates automatically", isOn: $automaticallyCheckForUpdates)
+
+                Button("Check for Updates…") {
+                    onManualCheckForUpdates()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        case .permissions:
+            SettingsSectionContent(title: "Permissions") {
+                Text("No account, network permission, cloud sync, telemetry, calendar, contacts, or location access is required for time tracking.")
+                    .foregroundStyle(.secondary)
+            }
+        case .advanced:
+            SettingsSectionContent(title: "Advanced / Data Reset") {
+                Text("Manual reset flows will require an explicit backup prompt and typing RESET before destructive changes.")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func persist() {
@@ -140,9 +227,28 @@ struct SettingsEditorView: View {
                 launchAtLoginPromptHandled: settings.launchAtLoginPromptHandled,
                 automaticallyCheckForUpdates: automaticallyCheckForUpdates,
                 lastSuccessfulUpdateCheckAt: settings.lastSuccessfulUpdateCheckAt,
-                liveBreakDeductionThresholdMinutes: settings.liveBreakDeductionThresholdMinutes,
+                liveBreakDeductionThresholdMinutes: liveBreakDeductionThresholdMinutes,
                 onboardingCompleted: settings.onboardingCompleted
             )
         )
+    }
+}
+
+private struct SettingsSectionContent<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 14) {
+                    content
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 }
