@@ -1,44 +1,133 @@
+import AppKit
 import SwiftUI
 
 struct AnalyticsWindowView: View {
     @Bindable var store: LoqClockStore
+    @State private var timeframe: AnalyticsTimeframe = .month
+    @State private var includeMissingDaysInAverages = false
+    @State private var exportStatusMessage: String?
+
+    private var reportService: AnalyticsReportService {
+        AnalyticsReportService(calendar: store.calendar)
+    }
 
     var body: some View {
         let now = Date()
-        let total = store.calculator.totalBalanceMinutes(for: store.entries, now: now)
-        let week = store.calculator.weekBalanceMinutes(for: store.entries, relativeTo: now, now: now)
-        let month = store.calculator.monthBalanceMinutes(for: store.entries, relativeTo: now, now: now)
-        let year = store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: now, now: now)
+        let summary = reportService.summary(
+            entries: store.entries,
+            timeframe: timeframe,
+            includeMissingDaysInAverages: includeMissingDaysInAverages,
+            relativeTo: now,
+            now: now
+        )
 
         VStack(alignment: .leading, spacing: 18) {
-            Text("Analytics")
-                .font(.title2.weight(.semibold))
+            HStack {
+                Text("Analytics")
+                    .font(.title2.weight(.semibold))
 
-            Text("Session-aware summaries. Charts, heatmaps, date-range controls, and report export are the next analytics layer.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Spacer()
+
+                Picker("Timeframe", selection: $timeframe) {
+                    ForEach(AnalyticsTimeframe.allCases) { timeframe in
+                        Text(timeframe.rawValue).tag(timeframe)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 280)
+            }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                AnalyticsMetricCard(title: "Total", value: signedDurationText(total))
-                AnalyticsMetricCard(title: "Week", value: signedDurationText(week))
-                AnalyticsMetricCard(title: "Month", value: signedDurationText(month))
-                AnalyticsMetricCard(title: "Year", value: signedDurationText(year))
+                AnalyticsMetricCard(title: "Balance", value: signedDurationText(summary.totalBalanceMinutes))
+                AnalyticsMetricCard(title: "Tracked Days", value: "\(summary.trackedDays)")
+                AnalyticsMetricCard(title: "Review Days", value: "\(summary.reviewDays)")
+                AnalyticsMetricCard(title: "Avg Net", value: durationText(summary.averageNetWorkedMinutes))
+            }
+
+            HStack {
+                Toggle("Include missing days in averages", isOn: $includeMissingDaysInAverages)
+
+                Spacer()
+
+                Button("Export CSV") {
+                    exportCSV(summary: summary)
+                }
+
+                Button("Export PDF") {
+                    exportPDF(summary: summary)
+                }
             }
 
             Divider()
 
-            HStack {
-                Text("Tracked Days")
-                    .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Daily Rows")
+                    .font(.headline)
 
-                Spacer()
+                if summary.rows.isEmpty {
+                    Text("No entries in this timeframe.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(summary.rows.suffix(10), id: \.date) { row in
+                        HStack {
+                            Text(row.date.id)
+                                .fontWeight(.semibold)
 
-                Text("\(store.entries.filter { !$0.sessions.isEmpty }.count)")
+                            Spacer()
+
+                            Text("\(row.sessions) sessions")
+                                .foregroundStyle(.secondary)
+
+                            Text(signedDurationText(row.balanceMinutes))
+                                .frame(width: 72, alignment: .trailing)
+                        }
+                        .font(.subheadline)
+                    }
+                }
+            }
+
+            if let exportStatusMessage {
+                Text(exportStatusMessage)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(24)
-        .frame(width: 520)
+        .frame(width: 620)
+    }
+
+    private func exportCSV(summary: AnalyticsReportSummary) {
+        export(
+            data: reportService.csvData(summary: summary),
+            fileName: "LoqClock-analytics-\(summary.timeframe.rawValue.lowercased()).csv",
+            successMessage: "Exported analytics CSV."
+        )
+    }
+
+    private func exportPDF(summary: AnalyticsReportSummary) {
+        export(
+            data: reportService.pdfData(summary: summary),
+            fileName: "LoqClock-analytics-\(summary.timeframe.rawValue.lowercased()).pdf",
+            successMessage: "Exported analytics PDF."
+        )
+    }
+
+    private func export(data: Data, fileName: String, successMessage: String) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = fileName
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            exportStatusMessage = "Export cancelled."
+            return
+        }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            exportStatusMessage = successMessage
+        } catch {
+            exportStatusMessage = error.localizedDescription
+        }
     }
 
     private func signedDurationText(_ minutes: Int) -> String {
