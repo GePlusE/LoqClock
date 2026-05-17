@@ -9,12 +9,15 @@ struct AppReleaseInfo: Equatable, Sendable {
 
 enum AppUpdateError: LocalizedError {
     case invalidResponse
+    case noPublishedRelease
     case unsupportedVersion(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "LoqClock could not read the latest release information from GitHub."
+        case .noPublishedRelease:
+            return "No public LoqClock release is available yet."
         case .unsupportedVersion(let version):
             return "LoqClock could not compare the latest release version (\(version))."
         }
@@ -85,6 +88,9 @@ extension AppUpdateService {
                     let httpResponse = response as? HTTPURLResponse,
                     200..<300 ~= httpResponse.statusCode
                 else {
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 404 {
+                        throw AppUpdateError.noPublishedRelease
+                    }
                     throw AppUpdateError.invalidResponse
                 }
 

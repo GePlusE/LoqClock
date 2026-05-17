@@ -182,6 +182,10 @@ final class LoqClockStore {
             updateCheckErrorMessage = nil
             updateCheckStatusMessage = manual && !isUpdateAvailable ? "LoqClock is up to date." : nil
             save()
+        } catch AppUpdateError.noPublishedRelease {
+            availableUpdate = nil
+            updateCheckErrorMessage = nil
+            updateCheckStatusMessage = manual ? AppUpdateError.noPublishedRelease.localizedDescription : nil
         } catch {
             if manual {
                 updateCheckErrorMessage = error.localizedDescription

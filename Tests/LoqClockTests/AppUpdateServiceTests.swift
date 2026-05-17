@@ -40,4 +40,9 @@ struct AppUpdateServiceTests {
             _ = try service.compareVersions("1.0.0", "latest")
         }
     }
+
+    @Test
+    func noPublishedReleaseHasFriendlyMessage() {
+        #expect(AppUpdateError.noPublishedRelease.localizedDescription == "No public LoqClock release is available yet.")
+    }
 }

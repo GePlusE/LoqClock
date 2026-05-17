@@ -44,16 +44,9 @@ struct MenuBarView: View {
         return todaysEntry.startTime != nil && todaysEntry.endTime == nil
     }
 
-    private var todayStatusTitle: String {
-        guard let todaysEntry else {
-            return "Ready"
-        }
-
-        if todaysEntry.startTime == nil {
-            return "Ready"
-        }
-
-        return todaysEntry.endTime == nil ? "Working" : "Finished"
+    private var versionTitle: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        return "v\(version)"
     }
 
     var body: some View {
@@ -100,17 +93,13 @@ struct MenuBarView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("LoqClock")
                         .font(.title3.weight(.semibold))
-
-                    Text(isTodayInProgress ? "Today is running and updates live." : "Manual tracking with instant local updates.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
                 StatusBadge(
-                    title: todayStatusTitle,
-                    tone: statusTone
+                    title: versionTitle,
+                    tone: .neutral
                 )
             }
 
@@ -330,23 +319,7 @@ struct MenuBarView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-
-            Text("Reference: PRODUCT_SPEC.md")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
         }
-    }
-
-    private var statusTone: StatusBadge.Tone {
-        guard let todaysEntry else {
-            return .neutral
-        }
-
-        if todaysEntry.startTime == nil {
-            return .neutral
-        }
-
-        return todaysEntry.endTime == nil ? .active : .complete
     }
 
     private func durationText(_ minutes: Int) -> String {

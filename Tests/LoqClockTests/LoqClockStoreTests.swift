@@ -325,6 +325,22 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func manualUpdateCheckReportsMissingPublicReleaseAsStatus() async throws {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            appUpdateService: .mock(error: AppUpdateError.noPublishedRelease)
+        )
+
+        try await store.checkForUpdates(manual: true, now: referenceDate)
+
+        #expect(store.updateCheckErrorMessage == nil)
+        #expect(store.updateCheckStatusMessage == AppUpdateError.noPublishedRelease.localizedDescription)
+        #expect(store.availableUpdate == nil)
+    }
+
+    @Test
     func manualUpdateCheckReportsUpToDateStatus() async throws {
         let store = LoqClockStore(
             persistence: .memory(),
