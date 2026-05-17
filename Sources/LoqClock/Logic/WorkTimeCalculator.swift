@@ -121,7 +121,7 @@ struct WorkTimeCalculator {
 
         guard sortedSessions.count > 1 else {
             let grossMinutes = grossWorkedMinutes(for: entry, now: now)
-            let plannedBreakMinutes = entry.lunchDurationMinutes + entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
+            let plannedBreakMinutes = entry.lunchDurationMinutes
 
             if entry.activeSession != nil && grossMinutes <= liveBreakDeductionThresholdMinutes {
                 return 0
@@ -185,7 +185,7 @@ struct WorkTimeCalculator {
         }
 
         if entry.sessions.count == 1 {
-            let breakMinutes = entry.lunchDurationMinutes + entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
+            let breakMinutes = entry.lunchDurationMinutes
             let grossNeeded: Int
 
             if requiredNetMinutes <= liveBreakDeductionThresholdMinutes {

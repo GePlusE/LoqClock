@@ -14,7 +14,6 @@ struct EntryEditorView: View {
     @State private var endTime: Date
     @State private var targetWorkDurationMinutes: Int
     @State private var lunchDurationMinutes: Int
-    @State private var additionalBreaks: [WorkBreak]
     @State private var notes: String
 
     init(
@@ -51,7 +50,6 @@ struct EntryEditorView: View {
         _endTime = State(initialValue: existingEntry?.endTime ?? defaultEnd)
         _targetWorkDurationMinutes = State(initialValue: existingEntry?.targetWorkDurationMinutes ?? settings.defaultTargetWorkDurationMinutes)
         _lunchDurationMinutes = State(initialValue: existingEntry?.lunchDurationMinutes ?? settings.defaultLunchDurationMinutes)
-        _additionalBreaks = State(initialValue: existingEntry?.additionalBreaks ?? [])
         _notes = State(initialValue: existingEntry?.notes ?? "")
     }
 
@@ -112,85 +110,12 @@ struct EntryEditorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if additionalBreaks.isEmpty {
-                HStack {
-                    Text("Additional Breaks")
-                        .font(.headline)
-
-                    Spacer()
-
-                    Button("Add Break") {
-                        additionalBreaks.append(
-                            WorkBreak(
-                                name: defaultBreakName(for: additionalBreaks.count),
-                                durationMinutes: 5
-                            )
-                        )
-                        persist()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            } else {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Additional Breaks")
-                                .font(.headline)
-
-                            Spacer()
-
-                            if additionalBreaks.count < 10 {
-                                Button("Add Break") {
-                                    additionalBreaks.append(
-                                        WorkBreak(
-                                            name: defaultBreakName(for: additionalBreaks.count),
-                                            durationMinutes: 5
-                                        )
-                                    )
-                                    persist()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-
-                        ForEach(Array(additionalBreaks.enumerated()), id: \.element.id) { index, _ in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    TextField(
-                                        "Break name",
-                                        text: bindingForBreakName(at: index)
-                                    )
-                                    .textFieldStyle(.roundedBorder)
-
-                                    Button("Remove") {
-                                        additionalBreaks.remove(at: index)
-                                        persist()
-                                    }
-                                    .buttonStyle(.borderless)
-                                }
-
-                                DurationAdjusterRow(
-                                    title: "Duration",
-                                    minutes: bindingForBreakDuration(at: index),
-                                    range: 0...120
-                                )
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Notes")
                         .font(.headline)
 
-                    TextField("Optional notes", text: $notes, axis: .vertical)
-                        .lineLimit(3...5)
+                    TextField("Optional note", text: $notes)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -251,37 +176,11 @@ struct EntryEditorView: View {
             endTime: hasEndTime ? endTime : nil,
             targetWorkDurationMinutes: targetWorkDurationMinutes,
             lunchDurationMinutes: lunchDurationMinutes,
-            additionalBreaks: additionalBreaks.filter {
-                !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.durationMinutes > 0
-            },
-            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
+            additionalBreaks: [],
+            notes: WorkDayNote.sanitized(notes),
             createdAt: existingEntry?.createdAt ?? .now,
             updatedAt: .now
         )
-    }
-
-    private func bindingForBreakName(at index: Int) -> Binding<String> {
-        Binding(
-            get: { additionalBreaks[index].name },
-            set: { newValue in
-                additionalBreaks[index].name = newValue
-                persist()
-            }
-        )
-    }
-
-    private func bindingForBreakDuration(at index: Int) -> Binding<Int> {
-        Binding(
-            get: { additionalBreaks[index].durationMinutes },
-            set: { newValue in
-                additionalBreaks[index].durationMinutes = max(0, min(120, newValue))
-                persist()
-            }
-        )
-    }
-
-    private func defaultBreakName(for index: Int) -> String {
-        "Break \(index + 1)"
     }
 }
 

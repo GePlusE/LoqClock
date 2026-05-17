@@ -62,6 +62,7 @@ final class LoqClockStore {
 
     func createOrUpdateEntry(_ entry: WorkDayEntry, now: Date = .now) {
         var entry = entry
+        entry.note = WorkDayNote.sanitized(entry.note)
         entry.touch(now)
 
         if let index = entries.firstIndex(where: { $0.date == entry.date }) {

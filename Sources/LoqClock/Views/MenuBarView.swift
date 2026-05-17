@@ -157,7 +157,6 @@ struct MenuBarView: View {
 
             SectionCard(title: "Today") {
                 if let todaysEntry {
-                    let extraBreakSummary = extraBreakSummary(for: todaysEntry)
                     let netWorked = store.calculator.netWorkedMinutes(for: todaysEntry, now: now)
                     let dailyBalance = store.calculator.dailyBalanceMinutes(for: todaysEntry, now: now)
                     PlaceholderRow(title: "Start", value: timeText(todaysEntry.startTime))
@@ -167,9 +166,9 @@ struct MenuBarView: View {
                     )
                     PlaceholderRow(title: "Target", value: durationText(todaysEntry.targetWorkDurationMinutes))
                     PlaceholderRow(title: "Lunch", value: durationText(todaysEntry.lunchDurationMinutes))
-                    if let extraBreakSummary {
-                        PlaceholderRow(title: "Extra Breaks", value: extraBreakSummary)
-                    }
+                    PlaceholderRow(title: "Sessions", value: "\(todaysEntry.sessions.count)")
+                    PlaceholderRow(title: "Breaks", value: durationText(store.calculator.totalBreakMinutes(for: todaysEntry, now: now)))
+                    PlaceholderRow(title: "Note", value: todaysEntry.notes ?? "None")
                     PlaceholderRow(
                         title: "Net Worked Today",
                         value: durationText(netWorked)
@@ -345,15 +344,6 @@ struct MenuBarView: View {
         }
 
         return date.formatted(date: .omitted, time: .shortened)
-    }
-
-    private func extraBreakSummary(for entry: WorkDayEntry) -> String? {
-        guard !entry.additionalBreaks.isEmpty else {
-            return nil
-        }
-
-        let totalMinutes = entry.additionalBreaks.reduce(0) { $0 + $1.durationMinutes }
-        return "\(durationText(totalMinutes)) across \(entry.additionalBreaks.count)"
     }
 
     private func exportEntries(format: EntryTransferFormat) {

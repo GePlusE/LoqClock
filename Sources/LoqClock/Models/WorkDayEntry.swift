@@ -55,7 +55,7 @@ struct WorkDayEntry: Codable, Equatable, Identifiable, Sendable {
 
     var notes: String? {
         get { note }
-        set { note = newValue }
+        set { note = WorkDayNote.sanitized(newValue) }
     }
 
     init(
@@ -79,7 +79,7 @@ struct WorkDayEntry: Codable, Equatable, Identifiable, Sendable {
         self.targetWorkDurationMinutes = targetWorkDurationMinutes
         self.plannedBreakDurationMinutes = lunchDurationMinutes
         self.additionalBreaks = additionalBreaks
-        self.note = notes
+        self.note = WorkDayNote.sanitized(notes)
         if let sessions {
             self.sessions = sessions.sorted { $0.startTimestamp < $1.startTimestamp }
         } else if let startTime {
@@ -199,8 +199,10 @@ struct WorkDayEntry: Codable, Equatable, Identifiable, Sendable {
             let legacyBreakMinutes = try container.decodeIfPresent(Int.self, forKey: .additionalBreakDurationMinutes) ?? 0
             additionalBreaks = legacyBreakMinutes > 0 ? [WorkBreak(name: "Extra Break", durationMinutes: legacyBreakMinutes)] : []
         }
-        note = try container.decodeIfPresent(String.self, forKey: .note)
-            ?? container.decodeIfPresent(String.self, forKey: .notes)
+        note = WorkDayNote.sanitized(
+            try container.decodeIfPresent(String.self, forKey: .note)
+                ?? container.decodeIfPresent(String.self, forKey: .notes)
+        )
         if let decodedSessions = try container.decodeIfPresent([WorkSession].self, forKey: .sessions) {
             sessions = decodedSessions.sorted { $0.startTimestamp < $1.startTimestamp }
         } else if let legacyStartTime {

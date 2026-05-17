@@ -139,7 +139,9 @@ struct SettingsEditorView: View {
                 launchAtLoginEnabled: launchAtLoginEnabled,
                 launchAtLoginPromptHandled: settings.launchAtLoginPromptHandled,
                 automaticallyCheckForUpdates: automaticallyCheckForUpdates,
-                lastSuccessfulUpdateCheckAt: settings.lastSuccessfulUpdateCheckAt
+                lastSuccessfulUpdateCheckAt: settings.lastSuccessfulUpdateCheckAt,
+                liveBreakDeductionThresholdMinutes: settings.liveBreakDeductionThresholdMinutes,
+                onboardingCompleted: settings.onboardingCompleted
             )
         )
     }

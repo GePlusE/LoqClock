@@ -48,7 +48,7 @@ struct WorkTimeCalculatorTests {
     }
 
     @Test
-    func additionalBreaksReduceNetWorkedTime() {
+    func legacyAdditionalBreaksDoNotAffectSddSingleSessionBreaks() {
         let entry = WorkDayEntry(
             date: LocalDay(year: 2026, month: 5, day: 5),
             startTime: date(2026, 5, 5, 9, 0),
@@ -58,9 +58,9 @@ struct WorkTimeCalculatorTests {
             additionalBreaks: [WorkBreak(name: "Coffee", durationMinutes: 15)]
         )
 
-        #expect(calculator.totalBreakMinutes(for: entry) == 45)
-        #expect(calculator.netWorkedMinutes(for: entry) == 495)
-        #expect(calculator.dailyBalanceMinutes(for: entry) == 15)
+        #expect(calculator.totalBreakMinutes(for: entry) == 30)
+        #expect(calculator.netWorkedMinutes(for: entry) == 510)
+        #expect(calculator.dailyBalanceMinutes(for: entry) == 30)
     }
 
     @Test
@@ -194,7 +194,7 @@ struct WorkTimeCalculatorTests {
     }
 
     @Test
-    func leaveTimeForZeroTodayUsesStartLunchAndTarget() {
+    func leaveTimeForZeroTodayUsesStartPlannedBreakAndTarget() {
         let entry = WorkDayEntry(
             date: LocalDay(year: 2026, month: 5, day: 6),
             startTime: date(2026, 5, 6, 9, 0),
@@ -204,7 +204,7 @@ struct WorkTimeCalculatorTests {
             additionalBreaks: [WorkBreak(name: "Walk", durationMinutes: 15)]
         )
 
-        #expect(calculator.leaveTimeForZeroToday(for: entry) == date(2026, 5, 6, 18, 15))
+        #expect(calculator.leaveTimeForZeroToday(for: entry) == date(2026, 5, 6, 18, 0))
     }
 
     @Test
