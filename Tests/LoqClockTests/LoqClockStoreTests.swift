@@ -308,6 +308,63 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func deletingEntryCreatesRecoveryBackup() {
+        let backupRecorder = BackupRecorder()
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 9)
+
+        store.createOrUpdateEntry(
+            WorkDayEntry(
+                date: day,
+                startTime: referenceDate,
+                endTime: referenceDate.addingTimeInterval(8 * 60 * 60),
+                targetWorkDurationMinutes: 480,
+                lunchDurationMinutes: 60
+            ),
+            now: referenceDate
+        )
+
+        store.deleteEntry(for: day)
+
+        #expect(backupRecorder.reasons == ["delete-2026-05-09"])
+    }
+
+    @Test
+    func importingPayloadCreatesRecoveryBackup() {
+        let backupRecorder = BackupRecorder()
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 9)
+
+        _ = store.applyImportedPayload(
+            ImportedEntryPayload(
+                settings: nil,
+                entries: [
+                    WorkDayEntry(
+                        date: day,
+                        startTime: referenceDate,
+                        endTime: referenceDate.addingTimeInterval(8 * 60 * 60),
+                        targetWorkDurationMinutes: 480,
+                        lunchDurationMinutes: 60
+                    )
+                ]
+            ),
+            strategy: .replaceExisting
+        )
+
+        #expect(backupRecorder.reasons == ["before-import"])
+    }
+
+    @Test
     func launchAtLoginPromptAppearsAfterMeaningfulUseAndCanBeHandled() {
         let store = LoqClockStore(
             persistence: .memory(),
@@ -510,5 +567,17 @@ extension AppUpdateService {
                 return latestRelease
             }
         )
+    }
+}
+
+@MainActor
+private final class BackupRecorder {
+    var reasons: [String] = []
+
+    var service: LoqClockBackupService {
+        LoqClockBackupService { _, reason, _ in
+            self.reasons.append(reason)
+            return nil
+        }
     }
 }

@@ -20,12 +20,14 @@ final class LoqClockStore {
     let transferService: EntryTransferService
     let launchAtLoginService: LaunchAtLoginService
     let appUpdateService: AppUpdateService
+    let backupService: LoqClockBackupService
 
     init(
         persistence: LoqClockPersistence = .live(),
         calendar: Calendar = .current,
         launchAtLoginService: LaunchAtLoginService = .live(),
-        appUpdateService: AppUpdateService = .live()
+        appUpdateService: AppUpdateService = .live(),
+        backupService: LoqClockBackupService = .live()
     ) {
         self.persistence = persistence
         self.calendar = calendar
@@ -33,6 +35,7 @@ final class LoqClockStore {
         self.transferService = EntryTransferService()
         self.launchAtLoginService = launchAtLoginService
         self.appUpdateService = appUpdateService
+        self.backupService = backupService
 
         let state = (try? persistence.load()) ?? AppState()
         var loadedSettings = state.settings
@@ -109,6 +112,10 @@ final class LoqClockStore {
     }
 
     func deleteEntry(for day: LocalDay) {
+        if entry(for: day) != nil {
+            createRecoveryBackup(reason: "delete-\(day.id)")
+        }
+
         entries.removeAll(where: { $0.date == day })
         save()
     }
@@ -308,6 +315,8 @@ final class LoqClockStore {
         _ payload: ImportedEntryPayload,
         strategy: ImportConflictStrategy
     ) -> ImportApplicationSummary {
+        createRecoveryBackup(reason: "before-import")
+
         var importedCount = 0
         var replacedCount = 0
         var skippedCount = 0
@@ -353,6 +362,18 @@ final class LoqClockStore {
             try persistence.save(state)
         } catch {
             assertionFailure("Failed to save LoqClock state: \(error)")
+        }
+    }
+
+    private func createRecoveryBackup(reason: String, now: Date = .now) {
+        do {
+            _ = try backupService.createBackup(
+                AppState(settings: settings, entries: entries),
+                reason,
+                now
+            )
+        } catch {
+            assertionFailure("Failed to create LoqClock backup: \(error)")
         }
     }
 
