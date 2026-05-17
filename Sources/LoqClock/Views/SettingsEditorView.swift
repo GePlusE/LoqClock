@@ -13,6 +13,7 @@ struct SettingsEditorView: View {
     let onManualCheckForUpdates: () -> Void
     let onResetTrackingData: () -> Void
     let onResetEverything: () -> Void
+    let onRestoreLatestBackup: () -> Void
 
     @State private var defaultTargetWorkDurationMinutes: Int
     @State private var defaultLunchDurationMinutes: Int
@@ -48,7 +49,8 @@ struct SettingsEditorView: View {
         onToggleAutomaticUpdates: @escaping (Bool) -> Void,
         onManualCheckForUpdates: @escaping () -> Void,
         onResetTrackingData: @escaping () -> Void,
-        onResetEverything: @escaping () -> Void
+        onResetEverything: @escaping () -> Void,
+        onRestoreLatestBackup: @escaping () -> Void
     ) {
         self.settings = settings
         self.launchAtLoginErrorMessage = launchAtLoginErrorMessage
@@ -61,6 +63,7 @@ struct SettingsEditorView: View {
         self.onManualCheckForUpdates = onManualCheckForUpdates
         self.onResetTrackingData = onResetTrackingData
         self.onResetEverything = onResetEverything
+        self.onRestoreLatestBackup = onRestoreLatestBackup
         _defaultTargetWorkDurationMinutes = State(initialValue: settings.defaultTargetWorkDurationMinutes)
         _defaultLunchDurationMinutes = State(initialValue: settings.defaultLunchDurationMinutes)
         _launchAtLoginEnabled = State(initialValue: settings.launchAtLoginEnabled)
@@ -214,6 +217,11 @@ struct SettingsEditorView: View {
                 Toggle("Enable automatic local backups", isOn: $automaticBackupsEnabled)
                 Text("LoqClock creates local JSON recovery backups before risky changes and keeps the latest five.")
                     .foregroundStyle(.secondary)
+
+                Button("Restore Latest Backup…") {
+                    confirmRestoreLatestBackup()
+                }
+                .buttonStyle(.bordered)
             }
         case .analytics:
             SettingsSectionContent(title: "Analytics") {
@@ -295,6 +303,20 @@ struct SettingsEditorView: View {
         }
 
         onConfirm()
+    }
+
+    private func confirmRestoreLatestBackup() {
+        let alert = NSAlert()
+        alert.messageText = "Restore latest backup?"
+        alert.informativeText = "LoqClock will create a recovery backup of the current state first, then restore the newest local JSON backup."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Restore")
+
+        guard alert.runModal() == .alertSecondButtonReturn else {
+            return
+        }
+
+        onRestoreLatestBackup()
     }
 }
 

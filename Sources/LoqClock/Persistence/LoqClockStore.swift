@@ -143,6 +143,29 @@ final class LoqClockStore {
     }
 
     @discardableResult
+    func restoreLatestBackup(now: Date = .now) -> Bool {
+        do {
+            guard let backupURL = try backupService.latestBackup() else {
+                return false
+            }
+
+            createRecoveryBackup(reason: "before-restore", now: now)
+            let restoredState = try backupService.loadBackup(backupURL)
+            settings = restoredState.settings
+            settings.launchAtLoginEnabled = launchAtLoginService.currentState()
+            entries = restoredState.entries.sorted { $0.date < $1.date }
+            availableUpdate = nil
+            updateCheckErrorMessage = nil
+            updateCheckStatusMessage = nil
+            save()
+            return true
+        } catch {
+            assertionFailure("Failed to restore LoqClock backup: \(error)")
+            return false
+        }
+    }
+
+    @discardableResult
     func setLaunchAtLoginEnabled(_ enabled: Bool) -> Bool {
         do {
             let actualEnabled = try launchAtLoginService.setEnabled(enabled)

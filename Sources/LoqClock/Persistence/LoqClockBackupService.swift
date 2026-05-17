@@ -2,27 +2,44 @@ import Foundation
 
 struct LoqClockBackupService {
     var createBackup: (AppState, String, Date) throws -> URL?
+    var latestBackup: () throws -> URL?
+    var loadBackup: (URL) throws -> AppState
 
     static func live(fileManager: FileManager = .default) -> LoqClockBackupService {
-        LoqClockBackupService { state, reason, now in
-            let backupDirectory = backupDirectory(fileManager: fileManager)
-            try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+        LoqClockBackupService(
+            createBackup: { state, reason, now in
+                let backupDirectory = backupDirectory(fileManager: fileManager)
+                try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
 
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
 
-            let data = try encoder.encode(state)
-            let filename = "LoqClock-backup-\(filenameTimestamp(for: now))-\(safeReason(reason)).json"
-            let url = backupDirectory.appending(path: filename, directoryHint: .notDirectory)
-            try data.write(to: url, options: .atomic)
-            try pruneBackups(in: backupDirectory, fileManager: fileManager)
-            return url
-        }
+                let data = try encoder.encode(state)
+                let filename = "LoqClock-backup-\(filenameTimestamp(for: now))-\(safeReason(reason)).json"
+                let url = backupDirectory.appending(path: filename, directoryHint: .notDirectory)
+                try data.write(to: url, options: .atomic)
+                try pruneBackups(in: backupDirectory, fileManager: fileManager)
+                return url
+            },
+            latestBackup: {
+                try backupFiles(in: backupDirectory(fileManager: fileManager), fileManager: fileManager).first
+            },
+            loadBackup: { url in
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let data = try Data(contentsOf: url)
+                return try decoder.decode(AppState.self, from: data)
+            }
+        )
     }
 
     static func disabled() -> LoqClockBackupService {
-        LoqClockBackupService { _, _, _ in nil }
+        LoqClockBackupService(
+            createBackup: { _, _, _ in nil },
+            latestBackup: { nil },
+            loadBackup: { _ in AppState() }
+        )
     }
 
     private static func backupDirectory(fileManager: FileManager) -> URL {
@@ -50,7 +67,19 @@ struct LoqClockBackupService {
     }
 
     private static func pruneBackups(in directory: URL, fileManager: FileManager) throws {
-        let backupFiles = try fileManager.contentsOfDirectory(
+        let backupFiles = try backupFiles(in: directory, fileManager: fileManager)
+
+        for oldBackup in backupFiles.dropFirst(5) {
+            try fileManager.removeItem(at: oldBackup)
+        }
+    }
+
+    private static func backupFiles(in directory: URL, fileManager: FileManager) throws -> [URL] {
+        guard fileManager.fileExists(atPath: directory.path) else {
+            return []
+        }
+
+        return try fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
@@ -60,10 +89,6 @@ struct LoqClockBackupService {
             let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             return lhsDate > rhsDate
-        }
-
-        for oldBackup in backupFiles.dropFirst(5) {
-            try fileManager.removeItem(at: oldBackup)
         }
     }
 }

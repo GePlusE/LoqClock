@@ -25,6 +25,8 @@ struct SettingsWindowView: View {
             store.resetTrackingData()
         } onResetEverything: {
             store.resetEverything()
+        } onRestoreLatestBackup: {
+            _ = store.restoreLatestBackup()
         }
     }
 }

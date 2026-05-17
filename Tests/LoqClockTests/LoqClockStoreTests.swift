@@ -463,6 +463,58 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func restoreLatestBackupCreatesRecoveryBackupAndLoadsState() {
+        let restoredDay = LocalDay(year: 2026, month: 5, day: 10)
+        let backupRecorder = BackupRecorder(
+            latestBackupURL: URL(fileURLWithPath: "/tmp/loqclock-test-backup.json"),
+            restoredState: AppState(
+                settings: AppSettings(
+                    defaultTargetWorkDurationMinutes: 300,
+                    defaultLunchDurationMinutes: 30
+                ),
+                entries: [
+                    WorkDayEntry(
+                        date: restoredDay,
+                        startTime: referenceDate,
+                        endTime: referenceDate.addingTimeInterval(5 * 60 * 60),
+                        targetWorkDurationMinutes: 300,
+                        lunchDurationMinutes: 30
+                    )
+                ]
+            )
+        )
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+
+        let restored = store.restoreLatestBackup(now: referenceDate)
+
+        #expect(restored == true)
+        #expect(store.settings.defaultTargetWorkDurationMinutes == 300)
+        #expect(store.entry(for: restoredDay) != nil)
+        #expect(backupRecorder.reasons == ["before-restore"])
+    }
+
+    @Test
+    func restoreLatestBackupReturnsFalseWhenNoBackupExists() {
+        let backupRecorder = BackupRecorder()
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+
+        let restored = store.restoreLatestBackup(now: referenceDate)
+
+        #expect(restored == false)
+        #expect(backupRecorder.reasons.isEmpty)
+    }
+
+    @Test
     func launchAtLoginPromptAppearsAfterMeaningfulUseAndCanBeHandled() {
         let store = LoqClockStore(
             persistence: .memory(),
@@ -671,11 +723,29 @@ extension AppUpdateService {
 @MainActor
 private final class BackupRecorder {
     var reasons: [String] = []
+    var latestBackupURL: URL?
+    var restoredState: AppState
+
+    init(
+        latestBackupURL: URL? = nil,
+        restoredState: AppState = AppState()
+    ) {
+        self.latestBackupURL = latestBackupURL
+        self.restoredState = restoredState
+    }
 
     var service: LoqClockBackupService {
-        LoqClockBackupService { _, reason, _ in
-            self.reasons.append(reason)
-            return nil
-        }
+        LoqClockBackupService(
+            createBackup: { _, reason, _ in
+                self.reasons.append(reason)
+                return nil
+            },
+            latestBackup: {
+                self.latestBackupURL
+            },
+            loadBackup: { _ in
+                self.restoredState
+            }
+        )
     }
 }
