@@ -9,6 +9,7 @@ struct MenuBarView: View {
     private enum ActivePanel {
         case entryEditor
         case transfer
+        case onboarding
     }
     @State private var transferStatusMessage: String?
     @State private var lastStoppedSession: StoppedWorkSession?
@@ -57,7 +58,21 @@ struct MenuBarView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: store.hasActiveSession ? 60 : 3600)) { context in
             VStack(alignment: .leading, spacing: 16) {
-                if activePanel == .entryEditor {
+                if activePanel == .onboarding {
+                    OnboardingPanelView { launchAtLogin, notifications, reminders, updates, backups in
+                        store.completeOnboarding(
+                            launchAtLoginEnabled: launchAtLogin,
+                            notificationsEnabled: notifications,
+                            remindersEnabled: reminders,
+                            automaticUpdateChecksEnabled: updates,
+                            automaticBackupsEnabled: backups
+                        )
+                        activePanel = nil
+                    } onSkip: {
+                        store.skipOnboarding()
+                        activePanel = nil
+                    }
+                } else if activePanel == .entryEditor {
                     EntryEditorView(
                         day: today,
                         settings: store.settings,
@@ -83,6 +98,11 @@ struct MenuBarView: View {
             .padding(18)
             .frame(width: panelWidth)
             .background(.regularMaterial)
+            .onAppear {
+                if !store.settings.onboardingCompleted {
+                    activePanel = .onboarding
+                }
+            }
         }
     }
 
@@ -511,6 +531,8 @@ struct MenuBarView: View {
         case .transfer:
             return 380
         case .entryEditor:
+            return 420
+        case .onboarding:
             return 420
         case nil:
             return 320

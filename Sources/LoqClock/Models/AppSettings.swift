@@ -9,6 +9,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     var lastSuccessfulUpdateCheckAt: Date?
     var liveBreakDeductionThresholdMinutes: Int
     var onboardingCompleted: Bool
+    var notificationsEnabled: Bool
+    var remindersEnabled: Bool
+    var automaticBackupsEnabled: Bool
 
     static let `default` = AppSettings(
         defaultTargetWorkDurationMinutes: 480,
@@ -18,7 +21,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         automaticallyCheckForUpdates: false,
         lastSuccessfulUpdateCheckAt: nil,
         liveBreakDeductionThresholdMinutes: 360,
-        onboardingCompleted: false
+        onboardingCompleted: false,
+        notificationsEnabled: false,
+        remindersEnabled: false,
+        automaticBackupsEnabled: false
     )
 
     private enum CodingKeys: String, CodingKey {
@@ -30,6 +36,9 @@ struct AppSettings: Codable, Equatable, Sendable {
         case lastSuccessfulUpdateCheckAt
         case liveBreakDeductionThresholdMinutes
         case onboardingCompleted
+        case notificationsEnabled
+        case remindersEnabled
+        case automaticBackupsEnabled
     }
 
     init(
@@ -40,7 +49,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         automaticallyCheckForUpdates: Bool = false,
         lastSuccessfulUpdateCheckAt: Date? = nil,
         liveBreakDeductionThresholdMinutes: Int = 360,
-        onboardingCompleted: Bool = false
+        onboardingCompleted: Bool = false,
+        notificationsEnabled: Bool = false,
+        remindersEnabled: Bool = false,
+        automaticBackupsEnabled: Bool = false
     ) {
         self.defaultTargetWorkDurationMinutes = defaultTargetWorkDurationMinutes
         self.defaultLunchDurationMinutes = defaultLunchDurationMinutes
@@ -50,6 +62,9 @@ struct AppSettings: Codable, Equatable, Sendable {
         self.lastSuccessfulUpdateCheckAt = lastSuccessfulUpdateCheckAt
         self.liveBreakDeductionThresholdMinutes = liveBreakDeductionThresholdMinutes
         self.onboardingCompleted = onboardingCompleted
+        self.notificationsEnabled = notificationsEnabled
+        self.remindersEnabled = remindersEnabled
+        self.automaticBackupsEnabled = automaticBackupsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -62,5 +77,8 @@ struct AppSettings: Codable, Equatable, Sendable {
         lastSuccessfulUpdateCheckAt = try container.decodeIfPresent(Date.self, forKey: .lastSuccessfulUpdateCheckAt)
         liveBreakDeductionThresholdMinutes = try container.decodeIfPresent(Int.self, forKey: .liveBreakDeductionThresholdMinutes) ?? 360
         onboardingCompleted = try container.decodeIfPresent(Bool.self, forKey: .onboardingCompleted) ?? false
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false
+        remindersEnabled = try container.decodeIfPresent(Bool.self, forKey: .remindersEnabled) ?? false
+        automaticBackupsEnabled = try container.decodeIfPresent(Bool.self, forKey: .automaticBackupsEnabled) ?? false
     }
 }

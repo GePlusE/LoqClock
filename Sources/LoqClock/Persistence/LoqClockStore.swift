@@ -169,6 +169,38 @@ final class LoqClockStore {
         }
     }
 
+    func completeOnboarding(
+        launchAtLoginEnabled: Bool,
+        notificationsEnabled: Bool,
+        remindersEnabled: Bool,
+        automaticUpdateChecksEnabled: Bool,
+        automaticBackupsEnabled: Bool
+    ) {
+        settings.onboardingCompleted = true
+        settings.notificationsEnabled = notificationsEnabled
+        settings.remindersEnabled = remindersEnabled
+        settings.automaticallyCheckForUpdates = automaticUpdateChecksEnabled
+        settings.automaticBackupsEnabled = automaticBackupsEnabled
+        settings.launchAtLoginPromptHandled = true
+
+        if launchAtLoginEnabled {
+            _ = setLaunchAtLoginEnabled(true)
+        } else {
+            settings.launchAtLoginEnabled = launchAtLoginService.currentState()
+            save()
+        }
+    }
+
+    func skipOnboarding() {
+        completeOnboarding(
+            launchAtLoginEnabled: false,
+            notificationsEnabled: false,
+            remindersEnabled: false,
+            automaticUpdateChecksEnabled: false,
+            automaticBackupsEnabled: false
+        )
+    }
+
     var shouldOfferAutomaticUpdateCheck: Bool {
         settings.automaticallyCheckForUpdates
     }

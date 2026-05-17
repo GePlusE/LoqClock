@@ -420,6 +420,49 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func completingOnboardingPersistsChoices() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: .disabled()
+        )
+
+        store.completeOnboarding(
+            launchAtLoginEnabled: false,
+            notificationsEnabled: true,
+            remindersEnabled: true,
+            automaticUpdateChecksEnabled: true,
+            automaticBackupsEnabled: true
+        )
+
+        #expect(store.settings.onboardingCompleted == true)
+        #expect(store.settings.notificationsEnabled == true)
+        #expect(store.settings.remindersEnabled == true)
+        #expect(store.settings.automaticallyCheckForUpdates == true)
+        #expect(store.settings.automaticBackupsEnabled == true)
+        #expect(store.settings.launchAtLoginPromptHandled == true)
+    }
+
+    @Test
+    func skippingOnboardingDisablesOptionalChoices() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: .disabled()
+        )
+
+        store.skipOnboarding()
+
+        #expect(store.settings.onboardingCompleted == true)
+        #expect(store.settings.notificationsEnabled == false)
+        #expect(store.settings.remindersEnabled == false)
+        #expect(store.settings.automaticallyCheckForUpdates == false)
+        #expect(store.settings.automaticBackupsEnabled == false)
+    }
+
+    @Test
     func launchAtLoginPromptAppearsAfterMeaningfulUseAndCanBeHandled() {
         let store = LoqClockStore(
             persistence: .memory(),

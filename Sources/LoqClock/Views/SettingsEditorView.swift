@@ -19,6 +19,9 @@ struct SettingsEditorView: View {
     @State private var launchAtLoginEnabled: Bool
     @State private var automaticallyCheckForUpdates: Bool
     @State private var liveBreakDeductionThresholdMinutes: Int
+    @State private var notificationsEnabled: Bool
+    @State private var remindersEnabled: Bool
+    @State private var automaticBackupsEnabled: Bool
     @State private var selectedSection: SettingsSection = .general
 
     private enum SettingsSection: String, CaseIterable, Identifiable {
@@ -63,6 +66,9 @@ struct SettingsEditorView: View {
         _launchAtLoginEnabled = State(initialValue: settings.launchAtLoginEnabled)
         _automaticallyCheckForUpdates = State(initialValue: settings.automaticallyCheckForUpdates)
         _liveBreakDeductionThresholdMinutes = State(initialValue: settings.liveBreakDeductionThresholdMinutes)
+        _notificationsEnabled = State(initialValue: settings.notificationsEnabled)
+        _remindersEnabled = State(initialValue: settings.remindersEnabled)
+        _automaticBackupsEnabled = State(initialValue: settings.automaticBackupsEnabled)
     }
 
     var body: some View {
@@ -151,6 +157,15 @@ struct SettingsEditorView: View {
             liveBreakDeductionThresholdMinutes = max(0, min(960, newValue))
             persist()
         }
+        .onChange(of: notificationsEnabled) { _, _ in
+            persist()
+        }
+        .onChange(of: remindersEnabled) { _, _ in
+            persist()
+        }
+        .onChange(of: automaticBackupsEnabled) { _, _ in
+            persist()
+        }
     }
 
     @ViewBuilder
@@ -189,11 +204,14 @@ struct SettingsEditorView: View {
             }
         case .notifications:
             SettingsSectionContent(title: "Notifications") {
-                Text("Reminder and notification preferences will live here once notification scheduling is implemented.")
+                Toggle("Enable notifications", isOn: $notificationsEnabled)
+                Toggle("Enable reminders", isOn: $remindersEnabled)
+                Text("Scheduling hooks are stored locally here; delivery rules are the next notifications layer.")
                     .foregroundStyle(.secondary)
             }
         case .backupExport:
             SettingsSectionContent(title: "Backup & Export") {
+                Toggle("Enable automatic local backups", isOn: $automaticBackupsEnabled)
                 Text("LoqClock creates local JSON recovery backups before risky changes and keeps the latest five.")
                     .foregroundStyle(.secondary)
             }
@@ -253,7 +271,10 @@ struct SettingsEditorView: View {
                 automaticallyCheckForUpdates: automaticallyCheckForUpdates,
                 lastSuccessfulUpdateCheckAt: settings.lastSuccessfulUpdateCheckAt,
                 liveBreakDeductionThresholdMinutes: liveBreakDeductionThresholdMinutes,
-                onboardingCompleted: settings.onboardingCompleted
+                onboardingCompleted: settings.onboardingCompleted,
+                notificationsEnabled: notificationsEnabled,
+                remindersEnabled: remindersEnabled,
+                automaticBackupsEnabled: automaticBackupsEnabled
             )
         )
     }
