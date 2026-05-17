@@ -13,9 +13,15 @@ let package = Package(
             targets: ["LoqClock"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
+    ],
     targets: [
         .executableTarget(
-            name: "LoqClock"
+            name: "LoqClock",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift")
+            ]
         ),
         .testTarget(
             name: "LoqClockTests",

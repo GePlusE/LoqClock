@@ -11,6 +11,13 @@ struct LocalDay: Codable, Hashable, Comparable, Sendable {
         self.day = day
     }
 
+    init(id: String) {
+        let parts = id.split(separator: "-").compactMap { Int($0) }
+        self.year = parts.count > 0 ? parts[0] : 0
+        self.month = parts.count > 1 ? parts[1] : 0
+        self.day = parts.count > 2 ? parts[2] : 0
+    }
+
     init(date: Date, calendar: Calendar) {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         self.year = components.year ?? 0

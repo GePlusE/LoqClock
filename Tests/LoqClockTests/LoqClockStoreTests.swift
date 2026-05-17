@@ -246,13 +246,17 @@ struct LoqClockStoreTests {
     }
 
     @Test
-    func automaticUpdateChecksAreEnabledByDefault() {
+    func automaticUpdateChecksRequireExplicitOptIn() {
         let store = LoqClockStore(
             persistence: .memory(),
             calendar: testCalendar,
             launchAtLoginService: .mock(),
             appUpdateService: .mock()
         )
+
+        #expect(store.shouldPerformAutomaticUpdateCheck(now: referenceDate) == false)
+
+        store.setAutomaticUpdateChecksEnabled(true)
 
         #expect(store.shouldPerformAutomaticUpdateCheck(now: referenceDate) == true)
     }

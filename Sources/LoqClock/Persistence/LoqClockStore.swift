@@ -1,6 +1,7 @@
-import Foundation
-import Observation
 import AppKit
+import Foundation
+import GRDB
+import Observation
 
 @MainActor
 @Observable
@@ -329,39 +330,208 @@ struct LoqClockPersistence {
     let save: (AppState) throws -> Void
 
     static func live(fileManager: FileManager = .default) -> LoqClockPersistence {
-        let fileURL = appStateURL(fileManager: fileManager)
+        let fileURL = databaseURL(fileManager: fileManager)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        let dateFormatter = ISO8601DateFormatter()
+
+        let databaseQueue: DatabaseQueue
+
+        do {
+            try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            databaseQueue = try DatabaseQueue(path: fileURL.path)
+            try migrate(databaseQueue)
+        } catch {
+            assertionFailure("Failed to initialize LoqClock database: \(error)")
+            return .memory()
+        }
 
         return LoqClockPersistence(
             load: {
-                guard fileManager.fileExists(atPath: fileURL.path) else {
-                    return AppState()
+                try databaseQueue.read { db in
+                    let settings = try loadSettings(db: db, decoder: decoder)
+                    let entries = try loadEntries(db: db, dateFormatter: dateFormatter)
+                    return AppState(settings: settings, entries: entries)
                 }
-
-                let data = try Data(contentsOf: fileURL)
-                return try decoder.decode(AppState.self, from: data)
             },
             save: { state in
-                let directoryURL = fileURL.deletingLastPathComponent()
-                try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-                let data = try encoder.encode(state)
-                try data.write(to: fileURL, options: .atomic)
+                try databaseQueue.write { db in
+                    try save(state: state, db: db, encoder: encoder, dateFormatter: dateFormatter)
+                }
             }
         )
     }
 
-    private static func appStateURL(fileManager: FileManager) -> URL {
+    private static func databaseURL(fileManager: FileManager) -> URL {
         let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser
         return baseURL
             .appending(path: "LoqClock", directoryHint: .isDirectory)
-            .appending(path: "state.json", directoryHint: .notDirectory)
+            .appending(path: "LoqClock.sqlite", directoryHint: .notDirectory)
+    }
+
+    private static func migrate(_ databaseQueue: DatabaseQueue) throws {
+        var migrator = DatabaseMigrator()
+
+        migrator.registerMigration("create_sdd_core_tables") { db in
+            try db.create(table: "settings", ifNotExists: true) { table in
+                table.column("key", .text).primaryKey()
+                table.column("value", .text).notNull()
+                table.column("updated_at", .text).notNull()
+            }
+
+            try db.create(table: "work_days", ifNotExists: true) { table in
+                table.column("id", .text).primaryKey()
+                table.column("work_day_date", .text).notNull().unique()
+                table.column("timezone_identifier", .text).notNull()
+                table.column("target_work_duration_minutes", .integer).notNull()
+                table.column("planned_break_duration_minutes", .integer).notNull()
+                table.column("note", .text)
+                table.column("is_explicit_empty_day", .boolean).notNull().defaults(to: false)
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+            }
+
+            try db.create(table: "work_sessions", ifNotExists: true) { table in
+                table.column("id", .text).primaryKey()
+                table.column("work_day_id", .text).notNull().references("work_days", onDelete: .cascade)
+                table.column("assigned_work_day_date", .text).notNull()
+                table.column("start_timestamp", .text).notNull()
+                table.column("end_timestamp", .text)
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+            }
+        }
+
+        try migrator.migrate(databaseQueue)
+    }
+
+    private static func loadSettings(db: Database, decoder: JSONDecoder) throws -> AppSettings {
+        guard let row = try Row.fetchOne(db, sql: "SELECT value FROM settings WHERE key = ?", arguments: ["app_settings"]),
+              let json = row["value"] as String?,
+              let data = json.data(using: .utf8) else {
+            return .default
+        }
+
+        return try decoder.decode(AppSettings.self, from: data)
+    }
+
+    private static func loadEntries(db: Database, dateFormatter: ISO8601DateFormatter) throws -> [WorkDayEntry] {
+        let dayRows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT id, work_day_date, timezone_identifier, target_work_duration_minutes,
+                   planned_break_duration_minutes, note, is_explicit_empty_day, created_at, updated_at
+            FROM work_days
+            ORDER BY work_day_date
+            """
+        )
+
+        return try dayRows.map { dayRow in
+            let id = UUID(uuidString: dayRow["id"]) ?? UUID()
+            let day = LocalDay(id: dayRow["work_day_date"])
+            let sessionRows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, assigned_work_day_date, start_timestamp, end_timestamp, created_at, updated_at
+                FROM work_sessions
+                WHERE work_day_id = ?
+                ORDER BY start_timestamp
+                """,
+                arguments: [dayRow["id"] as String]
+            )
+            let sessions = sessionRows.compactMap { row -> WorkSession? in
+                guard let start = dateFormatter.date(from: row["start_timestamp"]) else {
+                    return nil
+                }
+
+                return WorkSession(
+                    id: UUID(uuidString: row["id"]) ?? UUID(),
+                    assignedWorkDayDate: LocalDay(id: row["assigned_work_day_date"]),
+                    startTimestamp: start,
+                    endTimestamp: (row["end_timestamp"] as String?).flatMap { dateFormatter.date(from: $0) },
+                    createdAt: (row["created_at"] as String?).flatMap { dateFormatter.date(from: $0) } ?? start,
+                    updatedAt: (row["updated_at"] as String?).flatMap { dateFormatter.date(from: $0) } ?? start
+                )
+            }
+
+            return WorkDayEntry(
+                id: id,
+                date: day,
+                timezoneIdentifier: dayRow["timezone_identifier"],
+                targetWorkDurationMinutes: dayRow["target_work_duration_minutes"],
+                lunchDurationMinutes: dayRow["planned_break_duration_minutes"],
+                notes: dayRow["note"],
+                sessions: sessions,
+                isExplicitEmptyDay: dayRow["is_explicit_empty_day"],
+                createdAt: (dayRow["created_at"] as String?).flatMap { dateFormatter.date(from: $0) } ?? .now,
+                updatedAt: (dayRow["updated_at"] as String?).flatMap { dateFormatter.date(from: $0) } ?? .now
+            )
+        }
+    }
+
+    private static func save(
+        state: AppState,
+        db: Database,
+        encoder: JSONEncoder,
+        dateFormatter: ISO8601DateFormatter
+    ) throws {
+        try db.execute(sql: "DELETE FROM work_sessions")
+        try db.execute(sql: "DELETE FROM work_days")
+        try db.execute(sql: "DELETE FROM settings WHERE key = ?", arguments: ["app_settings"])
+
+        let settingsData = try encoder.encode(state.settings)
+        let settingsJSON = String(decoding: settingsData, as: UTF8.self)
+        try db.execute(
+            sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            arguments: ["app_settings", settingsJSON, dateFormatter.string(from: .now)]
+        )
+
+        for entry in state.entries where entry.hasMeaningfulContent {
+            try db.execute(
+                sql: """
+                INSERT INTO work_days (
+                    id, work_day_date, timezone_identifier, target_work_duration_minutes,
+                    planned_break_duration_minutes, note, is_explicit_empty_day, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    entry.id.uuidString,
+                    entry.date.id,
+                    entry.timezoneIdentifier,
+                    entry.targetWorkDurationMinutes,
+                    entry.plannedBreakDurationMinutes,
+                    entry.note,
+                    entry.isExplicitEmptyDay,
+                    dateFormatter.string(from: entry.createdAt),
+                    dateFormatter.string(from: entry.updatedAt)
+                ]
+            )
+
+            for session in entry.sessions.sorted(by: { $0.startTimestamp < $1.startTimestamp }) {
+                try db.execute(
+                    sql: """
+                    INSERT INTO work_sessions (
+                        id, work_day_id, assigned_work_day_date, start_timestamp,
+                        end_timestamp, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        session.id.uuidString,
+                        entry.id.uuidString,
+                        session.assignedWorkDayDate.id,
+                        dateFormatter.string(from: session.startTimestamp),
+                        session.endTimestamp.map { dateFormatter.string(from: $0) },
+                        dateFormatter.string(from: session.createdAt),
+                        dateFormatter.string(from: session.updatedAt)
+                    ]
+                )
+            }
+        }
     }
 }
 
