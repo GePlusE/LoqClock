@@ -68,12 +68,13 @@ final class LoqClockStore {
             entry = WorkDayEntry(
                 id: entries[index].id,
                 date: entry.date,
-                startTime: entry.startTime,
-                endTime: entry.endTime,
+                timezoneIdentifier: entry.timezoneIdentifier,
                 targetWorkDurationMinutes: entry.targetWorkDurationMinutes,
                 lunchDurationMinutes: entry.lunchDurationMinutes,
                 additionalBreaks: entry.additionalBreaks,
                 notes: entry.notes,
+                sessions: entry.sessions,
+                isExplicitEmptyDay: entry.isExplicitEmptyDay,
                 createdAt: entries[index].createdAt,
                 updatedAt: now
             )
@@ -215,32 +216,43 @@ final class LoqClockStore {
 
     func startToday(now: Date = .now) {
         let today = LocalDay(date: now, calendar: calendar)
+        let normalizedStart = TimeNormalizer.roundedDownToMinute(now)
 
-        upsertEntry(for: today, now: now) { entry in
-            entry.startTime = entry.startTime ?? now
-            entry.endTime = nil
-        }
-    }
-
-    func endToday(now: Date = .now) {
-        let today = LocalDay(date: now, calendar: calendar)
-
-        upsertEntry(for: today, now: now) { entry in
-            entry.startTime = entry.startTime ?? now
-            entry.endTime = now
-        }
-    }
-
-    func clearTodayEndTime(now: Date = .now) {
-        let today = LocalDay(date: now, calendar: calendar)
-
-        guard entry(for: today) != nil else {
+        guard activeEntryIndex() == nil else {
             return
         }
 
         upsertEntry(for: today, now: now) { entry in
-            entry.endTime = nil
+            entry.startNewSession(at: normalizedStart, now: now)
         }
+    }
+
+    func endToday(now: Date = .now) {
+        let normalizedEnd = TimeNormalizer.roundedUpToMinuteIfNeeded(now)
+
+        guard let index = activeEntryIndex() else {
+            return
+        }
+
+        var entry = entries[index]
+        guard let stoppedSession = entry.stopActiveSession(at: normalizedEnd, now: now) else {
+            return
+        }
+
+        if calculator.sessionDurationMinutes(for: stoppedSession, now: now) < 1 {
+            entry.sessions.removeAll { $0.id == stoppedSession.id }
+        }
+
+        if entry.hasMeaningfulContent {
+            createOrUpdateEntry(entry, now: now)
+        } else {
+            entries.remove(at: index)
+            save()
+        }
+    }
+
+    func clearTodayEndTime(now: Date = .now) {
+        startToday(now: now)
     }
 
     func exportStateData(format: EntryTransferFormat) throws -> Data {
@@ -308,6 +320,12 @@ final class LoqClockStore {
             try persistence.save(state)
         } catch {
             assertionFailure("Failed to save LoqClock state: \(error)")
+        }
+    }
+
+    private func activeEntryIndex() -> Int? {
+        entries.firstIndex { entry in
+            entry.activeSession != nil
         }
     }
 }

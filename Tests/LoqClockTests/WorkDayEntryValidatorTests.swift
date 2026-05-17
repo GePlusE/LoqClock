@@ -23,7 +23,20 @@ struct WorkDayEntryValidatorTests {
     }
 
     @Test
-    func rejectsPastDaysWithoutBothTimes() {
+    func derivesReviewIssueForMissingEndTime() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 19),
+            startTime: validationDate(2026, 5, 19, 9, 0),
+            endTime: nil,
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60
+        )
+
+        #expect(validator.primaryReviewIssue(for: entry, now: now) == .missingEndTime)
+    }
+
+    @Test
+    func pastDaysWithoutEndTimeAreSavedForReviewInsteadOfRejected() {
         let error = validator.validate(
             day: LocalDay(year: 2026, month: 5, day: 19),
             startTime: validationDate(2026, 5, 19, 9, 0),
@@ -35,7 +48,7 @@ struct WorkDayEntryValidatorTests {
             now: now
         )
 
-        #expect(error == .startAndEndRequiredForPastDay)
+        #expect(error == nil)
     }
 
     @Test
@@ -68,6 +81,48 @@ struct WorkDayEntryValidatorTests {
         )
 
         #expect(error == .duplicateDate)
+    }
+
+    @Test
+    func detectsOverlappingSessions() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 20),
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60,
+            sessions: [
+                WorkSession(
+                    assignedWorkDayDate: LocalDay(year: 2026, month: 5, day: 20),
+                    startTimestamp: validationDate(2026, 5, 20, 9, 0),
+                    endTimestamp: validationDate(2026, 5, 20, 12, 0)
+                ),
+                WorkSession(
+                    assignedWorkDayDate: LocalDay(year: 2026, month: 5, day: 20),
+                    startTimestamp: validationDate(2026, 5, 20, 11, 30),
+                    endTimestamp: validationDate(2026, 5, 20, 17, 0)
+                )
+            ]
+        )
+
+        #expect(validator.primaryReviewIssue(for: entry, now: now) == .overlap)
+    }
+
+    @Test
+    func detectsSessionsExceedingNextCalendarDay() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 20),
+            timezoneIdentifier: "UTC",
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60,
+            sessions: [
+                WorkSession(
+                    assignedWorkDayDate: LocalDay(year: 2026, month: 5, day: 20),
+                    startTimestamp: validationDate(2026, 5, 20, 22, 0),
+                    endTimestamp: validationDate(2026, 5, 22, 1, 0)
+                )
+            ]
+        )
+
+        #expect(validator.primaryReviewIssue(for: entry, now: now) == .exceedsOvernightLimit)
     }
 }
 

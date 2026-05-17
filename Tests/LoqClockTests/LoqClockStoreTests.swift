@@ -161,6 +161,62 @@ struct LoqClockStoreTests {
         store.clearTodayEndTime(now: end)
 
         #expect(store.entry(for: day)?.endTime == nil)
+        #expect(store.entry(for: day)?.sessions.count == 2)
+        #expect(store.entry(for: day)?.sessions.filter { $0.endTimestamp == nil }.count == 1)
+    }
+
+    @Test
+    func startAndEndActionsNormalizeMinutesAndDiscardZeroMinuteSessions() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
+        )
+        let start = Date(timeIntervalSince1970: 1_777_680_030)
+        let stop = Date(timeIntervalSince1970: 1_777_680_031)
+        let day = LocalDay(date: start, calendar: testCalendar)
+
+        store.startToday(now: start)
+        store.endToday(now: stop)
+
+        #expect(store.entry(for: day)?.sessions.count == 1)
+        #expect(store.entry(for: day)?.sessions.first?.startTimestamp == Date(timeIntervalSince1970: 1_777_680_000))
+        #expect(store.entry(for: day)?.sessions.first?.endTimestamp == Date(timeIntervalSince1970: 1_777_680_060))
+    }
+
+    @Test
+    func accidentalStartStopWithinSameNormalizedMinuteIsDiscarded() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
+        )
+        let start = Date(timeIntervalSince1970: 1_777_680_000)
+        let stop = Date(timeIntervalSince1970: 1_777_680_000)
+        let day = LocalDay(date: start, calendar: testCalendar)
+
+        store.startToday(now: start)
+        store.endToday(now: stop)
+
+        #expect(store.entry(for: day) == nil)
+    }
+
+    @Test
+    func startingWorkDoesNotCreateSecondActiveSession() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
+        )
+        let start = referenceDate
+        let later = referenceDate.addingTimeInterval(30 * 60)
+        let day = LocalDay(date: start, calendar: testCalendar)
+
+        store.startToday(now: start)
+        store.startToday(now: later)
+
+        #expect(store.entry(for: day)?.sessions.count == 1)
+        #expect(store.entry(for: day)?.sessions.filter { $0.endTimestamp == nil }.count == 1)
     }
 
     @Test

@@ -64,6 +64,95 @@ struct WorkTimeCalculatorTests {
     }
 
     @Test
+    func activeSingleSessionDoesNotDeductBreakBeforeThreshold() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 5),
+            startTime: date(2026, 5, 5, 9, 0),
+            endTime: nil,
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60
+        )
+
+        #expect(calculator.netWorkedMinutes(for: entry, now: date(2026, 5, 5, 14, 0)) == 300)
+        #expect(calculator.totalBreakMinutes(for: entry, now: date(2026, 5, 5, 14, 0)) == 0)
+    }
+
+    @Test
+    func activeSingleSessionDeductsBreakAfterThreshold() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 5),
+            startTime: date(2026, 5, 5, 9, 0),
+            endTime: nil,
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60
+        )
+
+        #expect(calculator.netWorkedMinutes(for: entry, now: date(2026, 5, 5, 16, 0)) == 360)
+        #expect(calculator.totalBreakMinutes(for: entry, now: date(2026, 5, 5, 16, 0)) == 60)
+    }
+
+    @Test
+    func multiSessionDaysSumSessionsAndDisplayGapsAsBreaks() {
+        let day = LocalDay(year: 2026, month: 5, day: 5)
+        let entry = WorkDayEntry(
+            date: day,
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60,
+            sessions: [
+                WorkSession(
+                    assignedWorkDayDate: day,
+                    startTimestamp: date(2026, 5, 5, 9, 0),
+                    endTimestamp: date(2026, 5, 5, 12, 0)
+                ),
+                WorkSession(
+                    assignedWorkDayDate: day,
+                    startTimestamp: date(2026, 5, 5, 13, 15),
+                    endTimestamp: date(2026, 5, 5, 18, 0)
+                )
+            ]
+        )
+
+        #expect(calculator.netWorkedMinutes(for: entry) == 465)
+        #expect(calculator.totalBreakMinutes(for: entry) == 75)
+        #expect(calculator.dailyBalanceMinutes(for: entry) == -15)
+    }
+
+    @Test
+    func emptyEntriesDoNotCreateExpectedHours() {
+        let entry = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 5),
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60,
+            notes: "Doctor appointment"
+        )
+
+        #expect(calculator.netWorkedMinutes(for: entry) == 0)
+        #expect(calculator.dailyBalanceMinutes(for: entry) == 0)
+        #expect(calculator.totalBalanceMinutes(for: [entry]) == 0)
+    }
+
+    @Test
+    func reviewRequiredEntriesAreExcludedFromPeriodBalances() {
+        let incomplete = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 5),
+            startTime: date(2026, 5, 5, 9, 0),
+            endTime: nil,
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60
+        )
+        let completed = WorkDayEntry(
+            date: LocalDay(year: 2026, month: 5, day: 6),
+            startTime: date(2026, 5, 6, 9, 0),
+            endTime: date(2026, 5, 6, 18, 0),
+            targetWorkDurationMinutes: 480,
+            lunchDurationMinutes: 60
+        )
+
+        #expect(calculator.dailyBalanceMinutes(for: incomplete, now: date(2026, 5, 5, 12, 0)) == -300)
+        #expect(calculator.totalBalanceMinutes(for: [incomplete, completed], now: date(2026, 5, 6, 18, 0)) == 0)
+    }
+
+    @Test
     func periodBalancesUseOnlyTrackedDays() {
         let entries = [
             WorkDayEntry(
@@ -172,7 +261,7 @@ struct WorkTimeCalculatorTests {
             allEntries: [monday, today]
         )
 
-        #expect(leaveTime == date(2026, 5, 5, 15, 0))
+        #expect(leaveTime == date(2026, 5, 5, 14, 0))
     }
 
     @Test
@@ -198,6 +287,18 @@ struct WorkTimeCalculatorTests {
         )
 
         #expect(leaveTime == date(2026, 5, 5, 21, 0))
+    }
+
+    @Test
+    func sessionDurationsNormalizeStartDownAndStopUp() {
+        let day = LocalDay(year: 2026, month: 5, day: 5)
+        let session = WorkSession(
+            assignedWorkDayDate: day,
+            startTimestamp: Date(timeIntervalSince1970: 1_777_705_230),
+            endTimestamp: Date(timeIntervalSince1970: 1_777_705_291)
+        )
+
+        #expect(calculator.sessionDurationMinutes(for: session) == 2)
     }
 }
 
