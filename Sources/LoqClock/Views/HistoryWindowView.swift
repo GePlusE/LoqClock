@@ -30,8 +30,10 @@ struct HistoryWindowView: View {
             } else {
                 HistoryPanelView(
                     selectedDate: $selectedDate,
+                    entries: store.entries,
                     recentEntries: recentEntries,
                     calendar: store.calendar,
+                    calculator: store.calculator,
                     onClose: { dismiss() },
                     onOpenSelectedDate: {
                         editingDay = LocalDay(date: selectedDate, calendar: store.calendar)
