@@ -29,7 +29,6 @@ struct HistoryPanelView: View {
                     DatePicker(
                         "Date",
                         selection: $selectedDate,
-                        in: ...Date(),
                         displayedComponents: .date
                     )
                     .datePickerStyle(.field)

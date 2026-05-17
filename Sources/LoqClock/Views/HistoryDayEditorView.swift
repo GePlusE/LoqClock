@@ -9,17 +9,13 @@ struct HistoryDayEditorView: View {
     let onSave: (WorkDayEntry) -> Void
     let onDelete: (() -> Void)?
 
-    @State private var selectedDate: Date
-    @State private var hasStartTime: Bool
-    @State private var startTime: Date
-    @State private var hasEndTime: Bool
-    @State private var endTime: Date
+    @State private var sessions: [WorkSessionDraft]
     @State private var targetWorkDurationMinutes: Int
     @State private var lunchDurationMinutes: Int
     @State private var notes: String
 
     private let validator: WorkDayEntryValidator
-    private let originalDate: LocalDay?
+    private let day: LocalDay
 
     init(
         day: LocalDay,
@@ -39,34 +35,30 @@ struct HistoryDayEditorView: View {
         self.onSave = onSave
         self.onDelete = onDelete
         self.validator = WorkDayEntryValidator(calendar: calendar)
-        self.originalDate = existingEntry?.date
+        self.day = day
 
         let baseline = day.date(in: calendar) ?? .now
         let defaultStart = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: baseline) ?? baseline
-        let defaultEnd = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: baseline) ?? baseline
+        let defaultEnd = calendar.date(
+            byAdding: .minute,
+            value: settings.defaultTargetWorkDurationMinutes + settings.defaultLunchDurationMinutes,
+            to: defaultStart
+        ) ?? defaultStart
 
-        _selectedDate = State(initialValue: baseline)
-        _hasStartTime = State(initialValue: existingEntry?.startTime != nil || day < LocalDay(date: .now, calendar: calendar))
-        _startTime = State(initialValue: existingEntry?.startTime ?? defaultStart)
-        _hasEndTime = State(initialValue: existingEntry?.endTime != nil || day < LocalDay(date: .now, calendar: calendar))
-        _endTime = State(initialValue: existingEntry?.endTime ?? defaultEnd)
+        _sessions = State(
+            initialValue: existingEntry?.sessions.map {
+                WorkSessionDraft(session: $0, fallbackEndTime: defaultEnd)
+            } ?? []
+        )
         _targetWorkDurationMinutes = State(initialValue: existingEntry?.targetWorkDurationMinutes ?? settings.defaultTargetWorkDurationMinutes)
         _lunchDurationMinutes = State(initialValue: existingEntry?.lunchDurationMinutes ?? settings.defaultLunchDurationMinutes)
         _notes = State(initialValue: existingEntry?.notes ?? "")
     }
 
     var body: some View {
-        let selectedLocalDay = LocalDay(date: selectedDate, calendar: calendar)
-        let validationError = validator.validate(
-            day: selectedLocalDay,
-            startTime: resolvedStartTime,
-            endTime: resolvedEndTime,
-            lunchDurationMinutes: lunchDurationMinutes,
-            additionalBreaks: [],
-            existingDates: existingDates,
-            originalDate: originalDate
-        )
-        let isPastDay = selectedLocalDay < LocalDay(date: .now, calendar: calendar)
+        let draftEntry = makeEntry(for: day)
+        let reviewIssue = validator.primaryReviewIssue(for: draftEntry)
+        let isFutureDay = day > LocalDay(date: .now, calendar: calendar)
 
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -82,69 +74,60 @@ struct HistoryDayEditorView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    DatePicker(
-                        "Date",
-                        selection: $selectedDate,
-                        in: ...Date(),
-                        displayedComponents: .date
+                    HistoryReadOnlyRow(
+                        title: "Date",
+                        value: day.date(in: calendar)?.formatted(date: .abbreviated, time: .omitted) ?? day.id
                     )
-                    .datePickerStyle(.field)
-                    .onChange(of: selectedDate) { _, newDate in
-                        rebaseTimes(on: newDate)
-                        if isPast(newDate) {
-                            hasStartTime = true
-                            hasEndTime = true
-                        }
-                    }
 
-                    if isPastDay {
-                        Text("Past days require both a start time and an end time.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !isPastDay {
-                        Toggle("Has Start Time", isOn: $hasStartTime)
-                    }
-
-                    if hasStartTime || isPastDay {
-                        DatePicker(
-                            "Start",
-                            selection: $startTime,
-                            displayedComponents: .hourAndMinute
-                        )
-                        .datePickerStyle(.field)
-                    }
-
-                    if !isPastDay {
-                        Toggle("Has End Time", isOn: $hasEndTime)
-                    }
-
-                    if hasEndTime || isPastDay {
-                        DatePicker(
-                            "End",
-                            selection: $endTime,
-                            displayedComponents: .hourAndMinute
-                        )
-                        .datePickerStyle(.field)
-                    }
+                    HistoryReadOnlyRow(
+                        title: "Time Zone",
+                        value: existingEntry?.timezoneIdentifier ?? TimeZone.current.identifier
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if isFutureDay {
+                GroupBox {
+                    Text("Future days can keep a note, but sessions can only be added once the day arrives.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                SessionListEditorView(
+                    sessions: $sessions,
+                    day: day,
+                    calendar: calendar,
+                    defaultDurationMinutes: targetWorkDurationMinutes + lunchDurationMinutes
+                )
+            }
+
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    DurationAdjusterRow(
-                        title: "Target Work",
-                        minutes: $targetWorkDurationMinutes,
-                        range: 0...960
-                    )
+                    if isFutureDay {
+                        Text("Target and planned break are applied when sessions are tracked.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        DurationAdjusterRow(
+                            title: "Target Work",
+                            minutes: $targetWorkDurationMinutes,
+                            range: 0...960
+                        )
 
-                    DurationAdjusterRow(
-                        title: "Lunch",
-                        minutes: $lunchDurationMinutes,
-                        range: 0...240
-                    )
+                        if sessions.count <= 1 {
+                            DurationAdjusterRow(
+                                title: "Planned Break",
+                                minutes: $lunchDurationMinutes,
+                                range: 0...240
+                            )
+                        } else {
+                            Text("Multi-session days use gaps between sessions as breaks.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -159,10 +142,10 @@ struct HistoryDayEditorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if let validationError {
-                Text(validationError.localizedDescription)
+            if let reviewIssue {
+                Text("Needs review: \(reviewIssue.rawValue.replacingOccurrences(of: "_", with: " "))")
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.orange)
             }
 
             HStack {
@@ -176,61 +159,50 @@ struct HistoryDayEditorView: View {
                 Spacer()
 
                 Button("Save Day") {
-                    onSave(makeEntry(for: selectedLocalDay))
+                    onSave(makeEntry(for: day))
                     onBack()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(validationError != nil)
             }
         }
         .padding(20)
         .frame(width: 420)
     }
 
-    private var resolvedStartTime: Date? {
-        let selectedLocalDay = LocalDay(date: selectedDate, calendar: calendar)
-        let isPastDay = selectedLocalDay < LocalDay(date: .now, calendar: calendar)
-        return (hasStartTime || isPastDay) ? startTime : nil
-    }
-
-    private var resolvedEndTime: Date? {
-        let selectedLocalDay = LocalDay(date: selectedDate, calendar: calendar)
-        let isPastDay = selectedLocalDay < LocalDay(date: .now, calendar: calendar)
-        return (hasEndTime || isPastDay) ? endTime : nil
-    }
-
     private func makeEntry(for day: LocalDay) -> WorkDayEntry {
         WorkDayEntry(
             id: existingEntry?.id ?? UUID(),
             date: day,
-            startTime: resolvedStartTime,
-            endTime: resolvedEndTime,
+            timezoneIdentifier: existingEntry?.timezoneIdentifier ?? TimeZone.current.identifier,
             targetWorkDurationMinutes: targetWorkDurationMinutes,
             lunchDurationMinutes: lunchDurationMinutes,
             additionalBreaks: [],
             notes: WorkDayNote.sanitized(notes),
+            sessions: day > LocalDay(date: .now, calendar: calendar)
+                ? []
+                : sessions
+                    .map { $0.makeSession(for: day) }
+                    .sorted { $0.startTimestamp < $1.startTimestamp },
             createdAt: existingEntry?.createdAt ?? .now,
             updatedAt: .now
         )
     }
+}
 
-    private func rebaseTimes(on newDate: Date) {
-        startTime = rebasedTime(from: startTime, onto: newDate)
-        endTime = rebasedTime(from: endTime, onto: newDate)
+private struct HistoryReadOnlyRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .fontWeight(.semibold)
+
+            Spacer()
+
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
     }
-
-    private func rebasedTime(from source: Date, onto targetDate: Date) -> Date {
-        let timeComponents = calendar.dateComponents([.hour, .minute], from: source)
-        return calendar.date(
-            bySettingHour: timeComponents.hour ?? 0,
-            minute: timeComponents.minute ?? 0,
-            second: 0,
-            of: targetDate
-        ) ?? targetDate
-    }
-
-    private func isPast(_ date: Date) -> Bool {
-        LocalDay(date: date, calendar: calendar) < LocalDay(date: .now, calendar: calendar)
-    }
-
 }

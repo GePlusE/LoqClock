@@ -8,10 +8,7 @@ struct EntryEditorView: View {
     let onCancel: () -> Void
     let onSave: (WorkDayEntry) -> Void
 
-    @State private var hasStartTime: Bool
-    @State private var startTime: Date
-    @State private var hasEndTime: Bool
-    @State private var endTime: Date
+    @State private var sessions: [WorkSessionDraft]
     @State private var targetWorkDurationMinutes: Int
     @State private var lunchDurationMinutes: Int
     @State private var notes: String
@@ -44,10 +41,11 @@ struct EntryEditorView: View {
             to: defaultStart
         ) ?? defaultStart
 
-        _hasStartTime = State(initialValue: existingEntry?.startTime != nil)
-        _startTime = State(initialValue: existingEntry?.startTime ?? defaultStart)
-        _hasEndTime = State(initialValue: existingEntry?.endTime != nil)
-        _endTime = State(initialValue: existingEntry?.endTime ?? defaultEnd)
+        _sessions = State(
+            initialValue: existingEntry?.sessions.map {
+                WorkSessionDraft(session: $0, fallbackEndTime: defaultEnd)
+            } ?? []
+        )
         _targetWorkDurationMinutes = State(initialValue: existingEntry?.targetWorkDurationMinutes ?? settings.defaultTargetWorkDurationMinutes)
         _lunchDurationMinutes = State(initialValue: existingEntry?.lunchDurationMinutes ?? settings.defaultLunchDurationMinutes)
         _notes = State(initialValue: existingEntry?.notes ?? "")
@@ -66,32 +64,12 @@ struct EntryEditorView: View {
                 }
             }
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Has Start Time", isOn: $hasStartTime)
-
-                    if hasStartTime {
-                        DatePicker(
-                            "Start",
-                            selection: $startTime,
-                            displayedComponents: .hourAndMinute
-                        )
-                        .datePickerStyle(.field)
-                    }
-
-                    Toggle("Has End Time", isOn: $hasEndTime)
-
-                    if hasEndTime {
-                        DatePicker(
-                            "End",
-                            selection: $endTime,
-                            displayedComponents: .hourAndMinute
-                        )
-                        .datePickerStyle(.field)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            SessionListEditorView(
+                sessions: $sessions,
+                day: day,
+                calendar: calendar,
+                defaultDurationMinutes: targetWorkDurationMinutes + lunchDurationMinutes
+            )
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
@@ -101,11 +79,17 @@ struct EntryEditorView: View {
                         range: 0...960
                     )
 
-                    DurationAdjusterRow(
-                        title: "Lunch",
-                        minutes: $lunchDurationMinutes,
-                        range: 0...240
-                    )
+                    if sessions.count <= 1 {
+                        DurationAdjusterRow(
+                            title: "Planned Break",
+                            minutes: $lunchDurationMinutes,
+                            range: 0...240
+                        )
+                    } else {
+                        Text("Multi-session days use gaps between sessions as breaks.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -134,22 +118,9 @@ struct EntryEditorView: View {
             }
         }
         .padding(20)
-        .frame(width: 360)
-        .onChange(of: hasStartTime) { _, _ in
+        .frame(width: 420)
+        .onChange(of: sessions) { _, _ in
             persist()
-        }
-        .onChange(of: startTime) { _, _ in
-            if hasStartTime {
-                persist()
-            }
-        }
-        .onChange(of: hasEndTime) { _, _ in
-            persist()
-        }
-        .onChange(of: endTime) { _, _ in
-            if hasEndTime {
-                persist()
-            }
         }
         .onChange(of: targetWorkDurationMinutes) { _, newValue in
             targetWorkDurationMinutes = max(0, min(960, newValue))
@@ -172,12 +143,13 @@ struct EntryEditorView: View {
         WorkDayEntry(
             id: existingEntry?.id ?? UUID(),
             date: day,
-            startTime: hasStartTime ? startTime : nil,
-            endTime: hasEndTime ? endTime : nil,
             targetWorkDurationMinutes: targetWorkDurationMinutes,
             lunchDurationMinutes: lunchDurationMinutes,
             additionalBreaks: [],
             notes: WorkDayNote.sanitized(notes),
+            sessions: sessions
+                .map { $0.makeSession(for: day) }
+                .sorted { $0.startTimestamp < $1.startTimestamp },
             createdAt: existingEntry?.createdAt ?? .now,
             updatedAt: .now
         )
