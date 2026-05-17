@@ -45,6 +45,16 @@ final class LoqClockStore {
         !settings.launchAtLoginPromptHandled && !entries.isEmpty
     }
 
+    var activeEntry: WorkDayEntry? {
+        entries.first { entry in
+            entry.activeSession != nil
+        }
+    }
+
+    var hasActiveSession: Bool {
+        activeEntry != nil
+    }
+
     func entry(for day: LocalDay) -> WorkDayEntry? {
         entries.first(where: { $0.date == day })
     }
@@ -228,20 +238,28 @@ final class LoqClockStore {
         }
     }
 
-    func endToday(now: Date = .now) {
+    @discardableResult
+    func endToday(now: Date = .now) -> StoppedWorkSession? {
         let normalizedEnd = TimeNormalizer.roundedUpToMinuteIfNeeded(now)
 
         guard let index = activeEntryIndex() else {
-            return
+            return nil
         }
 
         var entry = entries[index]
         guard let stoppedSession = entry.stopActiveSession(at: normalizedEnd, now: now) else {
-            return
+            return nil
         }
 
         if calculator.sessionDurationMinutes(for: stoppedSession, now: now) < 1 {
             entry.sessions.removeAll { $0.id == stoppedSession.id }
+            if entry.hasMeaningfulContent {
+                createOrUpdateEntry(entry, now: now)
+            } else {
+                entries.remove(at: index)
+                save()
+            }
+            return nil
         }
 
         if entry.hasMeaningfulContent {
@@ -249,11 +267,25 @@ final class LoqClockStore {
         } else {
             entries.remove(at: index)
             save()
+            return nil
         }
+
+        return StoppedWorkSession(day: entry.date, sessionID: stoppedSession.id)
     }
 
     func clearTodayEndTime(now: Date = .now) {
         startToday(now: now)
+    }
+
+    func undoStop(_ stoppedSession: StoppedWorkSession, now: Date = .now) {
+        guard activeEntryIndex() == nil,
+              let index = entries.firstIndex(where: { $0.date == stoppedSession.day }) else {
+            return
+        }
+
+        var entry = entries[index]
+        entry.undoStop(sessionID: stoppedSession.sessionID, now: now)
+        createOrUpdateEntry(entry, now: now)
     }
 
     func exportStateData(format: EntryTransferFormat) throws -> Data {
@@ -329,6 +361,11 @@ final class LoqClockStore {
             entry.activeSession != nil
         }
     }
+}
+
+struct StoppedWorkSession: Equatable, Sendable {
+    var day: LocalDay
+    var sessionID: UUID
 }
 
 struct AppState: Codable, Equatable, Sendable {

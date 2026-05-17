@@ -238,6 +238,29 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func stoppedSessionCanBeUndoneWithoutCreatingAnotherActiveSession() {
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock()
+        )
+        let day = LocalDay(date: referenceDate, calendar: testCalendar)
+
+        store.startToday(now: referenceDate)
+        let stoppedSession = store.endToday(now: referenceDate.addingTimeInterval(60 * 60))
+
+        #expect(store.hasActiveSession == false)
+
+        if let stoppedSession {
+            store.undoStop(stoppedSession, now: referenceDate.addingTimeInterval(61 * 60))
+        }
+
+        #expect(store.hasActiveSession == true)
+        #expect(store.entry(for: day)?.sessions.count == 1)
+        #expect(store.entry(for: day)?.sessions.first?.endTimestamp == nil)
+    }
+
+    @Test
     func importConflictStrategyCanReplaceOrSkipExistingDates() {
         let store = LoqClockStore(
             persistence: .memory(),

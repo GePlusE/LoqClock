@@ -11,6 +11,7 @@ struct MenuBarView: View {
         case transfer
     }
     @State private var transferStatusMessage: String?
+    @State private var lastStoppedSession: StoppedWorkSession?
 
     private var today: LocalDay {
         LocalDay(date: .now, calendar: store.calendar)
@@ -37,11 +38,7 @@ struct MenuBarView: View {
     }
 
     private var isTodayInProgress: Bool {
-        guard let todaysEntry else {
-            return false
-        }
-
-        return todaysEntry.startTime != nil && todaysEntry.endTime == nil
+        todaysEntry?.activeSession != nil
     }
 
     private var versionTitle: String {
@@ -49,8 +46,16 @@ struct MenuBarView: View {
         return "v\(version)"
     }
 
+    private var startTrackingTitle: String {
+        if let todaysEntry, !todaysEntry.sessions.isEmpty {
+            return "Resume Work"
+        }
+
+        return "Start Tracking"
+    }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: isTodayInProgress ? 60 : 3600)) { context in
+        TimelineView(.periodic(from: .now, by: store.hasActiveSession ? 60 : 3600)) { context in
             VStack(alignment: .leading, spacing: 16) {
                 if activePanel == .entryEditor {
                     EntryEditorView(
@@ -87,6 +92,7 @@ struct MenuBarView: View {
         let weekBalance = store.calculator.weekBalanceMinutes(for: store.entries, relativeTo: now, now: now)
         let monthBalance = store.calculator.monthBalanceMinutes(for: store.entries, relativeTo: now, now: now)
         let yearBalance = store.calculator.yearBalanceMinutes(for: store.entries, relativeTo: now, now: now)
+        let attentionEntries = attentionEntries(now: now)
 
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
@@ -179,19 +185,21 @@ struct MenuBarView: View {
                     )
                     PlaceholderRow(
                         title: "Leave at 0 Today",
-                        value: timeText(store.calculator.leaveTimeForZeroToday(for: todaysEntry))
+                        value: timeText(store.calculator.leaveTimeForZeroToday(for: todaysEntry, now: now))
                     )
                     PlaceholderRow(
                         title: "Leave at 0 Week",
                         value: timeText(
                             store.calculator.leaveTimeForZeroWeek(
                                 todayEntry: todaysEntry,
-                                allEntries: store.entries
+                                allEntries: store.entries,
+                                now: now
                             )
                         )
                     )
                 } else {
                     PlaceholderRow(title: "Today", value: "No local entry")
+                    PlaceholderRow(title: "Note", value: "None")
                 }
             }
 
@@ -199,14 +207,15 @@ struct MenuBarView: View {
                 if let todaysEntry {
                     PlaceholderRow(
                         title: "0 Today",
-                        value: timeText(store.calculator.leaveTimeForZeroToday(for: todaysEntry))
+                        value: timeText(store.calculator.leaveTimeForZeroToday(for: todaysEntry, now: now))
                     )
                     PlaceholderRow(
                         title: "0 This Week",
                         value: timeText(
                             store.calculator.leaveTimeForZeroWeek(
                                 todayEntry: todaysEntry,
-                                allEntries: store.entries
+                                allEntries: store.entries,
+                                now: now
                             )
                         )
                     )
@@ -222,82 +231,106 @@ struct MenuBarView: View {
                 PlaceholderRow(title: "Year", value: signedDurationText(yearBalance))
             }
 
-            SectionCard(title: "Defaults") {
-                PlaceholderRow(title: "Stored Entries", value: "\(store.entries.count)")
-                PlaceholderRow(title: "Target", value: durationText(store.settings.defaultTargetWorkDurationMinutes))
-                PlaceholderRow(title: "Lunch", value: durationText(store.settings.defaultLunchDurationMinutes))
+            SectionCard(title: "Attention Items") {
+                if attentionEntries.isEmpty {
+                    PlaceholderRow(title: "Status", value: "No review needed")
+                } else {
+                    PlaceholderRow(title: "Review Needed", value: "\(attentionEntries.count)")
+
+                    if let firstEntry = attentionEntries.first {
+                        PlaceholderRow(title: "First Day", value: firstEntry.date.id)
+                    }
+                }
             }
 
-            SectionCard(title: "Actions") {
+            SectionCard(title: "Primary Tracking Actions") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        ActionButton(title: isTodayInProgress ? "Restart Start" : "Start Day") {
+                        ActionButton(title: startTrackingTitle) {
                             store.startToday(now: now)
+                            lastStoppedSession = nil
                         }
+                        .disabled(store.hasActiveSession)
 
-                        ActionButton(title: isTodayInProgress ? "End Day" : "Set End Time") {
-                            store.endToday(now: now)
+                        ActionButton(title: "Stop Work") {
+                            lastStoppedSession = store.endToday(now: now)
                         }
-                        .disabled(todaysEntry == nil && !isTodayInProgress)
+                        .disabled(!store.hasActiveSession)
                     }
 
                     HStack(spacing: 10) {
+                        ActionButton(title: "Undo Stop") {
+                            if let lastStoppedSession {
+                                store.undoStop(lastStoppedSession, now: now)
+                                self.lastStoppedSession = nil
+                            }
+                        }
+                        .disabled(lastStoppedSession == nil || store.hasActiveSession)
+
                         ActionButton(title: todaysEntry == nil ? "Create Today" : "Edit Today") {
                             if todaysEntry == nil {
                                 _ = store.ensureEntry(for: today)
                             }
                             activePanel = .entryEditor
                         }
-
-                        if todaysEntry?.endTime != nil {
-                            ActionButton(title: "Resume Today") {
-                                store.clearTodayEndTime(now: now)
-                            }
-                        }
                     }
+                }
+            }
 
-                    HStack(spacing: 10) {
-                        ActionButton(title: "Settings") {
-                            openWindow(id: "settings")
-                        }
-
-                        ActionButton(title: "Import / Export") {
-                            activePanel = .transfer
-                        }
-                    }
-
-                    HStack(spacing: 10) {
-                        ActionButton(title: "Check for Updates…") {
-                            Task {
-                                try? await store.checkForUpdates(manual: true)
-                            }
-                        }
-
-                        if store.isCheckingForUpdates {
-                            Text("Checking…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
+            SectionCard(title: "Navigation") {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         ActionButton(title: "History") {
                             openWindow(id: "history")
                         }
 
-                        ActionButton(title: "Delete Today", role: .destructive) {
-                            store.deleteEntry(for: today)
+                        ActionButton(title: "Analytics") {
+                            openWindow(id: "analytics")
                         }
-                        .disabled(todaysEntry == nil)
-
-                        Spacer()
-
-                        Button("Quit") {
-                            NSApplication.shared.terminate(nil)
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.secondary)
                     }
+
+                    HStack(spacing: 10) {
+                        ActionButton(title: "Import / Export") {
+                            activePanel = .transfer
+                        }
+
+                        ActionButton(title: "Settings") {
+                            openWindow(id: "settings")
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        ActionButton(title: "About") {
+                            openWindow(id: "about")
+                        }
+
+                        ActionButton(title: "Check for Updates…") {
+                            Task {
+                                try? await store.checkForUpdates(manual: true)
+                            }
+                        }
+                    }
+
+                    if store.isCheckingForUpdates {
+                        Text("Checking…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            SectionCard(title: "Footer") {
+                HStack(spacing: 10) {
+                    ActionButton(title: "Delete Today", role: .destructive) {
+                        store.deleteEntry(for: today)
+                    }
+                    .disabled(todaysEntry == nil)
+
+                    Button("Quit LoqClock") {
+                        requestQuit()
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -344,6 +377,13 @@ struct MenuBarView: View {
         }
 
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func attentionEntries(now: Date) -> [WorkDayEntry] {
+        let validator = WorkDayEntryValidator(calendar: store.calendar)
+        return store.entries.filter { entry in
+            validator.requiresReview(entry, now: now)
+        }
     }
 
     private func exportEntries(format: EntryTransferFormat) {
@@ -447,12 +487,31 @@ struct MenuBarView: View {
         alert.runModal()
     }
 
+    private func requestQuit() {
+        guard store.hasActiveSession else {
+            NSApplication.shared.terminate(nil)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Quit while tracking?"
+        alert.informativeText = "LoqClock has an active session. Quit Anyway leaves it incomplete for review instead of stopping it automatically."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit Anyway")
+
+        guard alert.runModal() == .alertSecondButtonReturn else {
+            return
+        }
+
+        NSApplication.shared.terminate(nil)
+    }
+
     private var panelWidth: CGFloat {
         switch activePanel {
         case .transfer:
             return 380
         case .entryEditor:
-            return 360
+            return 420
         case nil:
             return 320
         }

@@ -31,5 +31,15 @@ struct LoqClockApp: App {
             HistoryWindowView(store: store)
         }
         .windowResizability(.contentSize)
+
+        Window("Analytics", id: "analytics") {
+            AnalyticsWindowView(store: store)
+        }
+        .windowResizability(.contentSize)
+
+        Window("About LoqClock", id: "about") {
+            AboutWindowView()
+        }
+        .windowResizability(.contentSize)
     }
 }
