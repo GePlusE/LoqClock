@@ -365,6 +365,61 @@ struct LoqClockStoreTests {
     }
 
     @Test
+    func resetTrackingDataCreatesBackupAndClearsEntries() {
+        let backupRecorder = BackupRecorder()
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+        let day = LocalDay(year: 2026, month: 5, day: 9)
+
+        store.createOrUpdateEntry(
+            WorkDayEntry(
+                date: day,
+                startTime: referenceDate,
+                endTime: referenceDate.addingTimeInterval(8 * 60 * 60),
+                targetWorkDurationMinutes: 480,
+                lunchDurationMinutes: 60
+            ),
+            now: referenceDate
+        )
+
+        store.resetTrackingData(now: referenceDate)
+
+        #expect(store.entries.isEmpty)
+        #expect(backupRecorder.reasons == ["reset-tracking-data"])
+    }
+
+    @Test
+    func resetEverythingCreatesBackupAndRestoresDefaults() {
+        let backupRecorder = BackupRecorder()
+        let store = LoqClockStore(
+            persistence: .memory(),
+            calendar: testCalendar,
+            launchAtLoginService: .mock(),
+            backupService: backupRecorder.service
+        )
+
+        store.updateSettings(
+            AppSettings(
+                defaultTargetWorkDurationMinutes: 300,
+                defaultLunchDurationMinutes: 30,
+                automaticallyCheckForUpdates: true
+            )
+        )
+        _ = store.ensureEntry(for: LocalDay(year: 2026, month: 5, day: 9), now: referenceDate)
+
+        store.resetEverything(now: referenceDate)
+
+        #expect(store.entries.isEmpty)
+        #expect(store.settings.defaultTargetWorkDurationMinutes == AppSettings.default.defaultTargetWorkDurationMinutes)
+        #expect(store.settings.automaticallyCheckForUpdates == false)
+        #expect(backupRecorder.reasons == ["reset-everything"])
+    }
+
+    @Test
     func launchAtLoginPromptAppearsAfterMeaningfulUseAndCanBeHandled() {
         let store = LoqClockStore(
             persistence: .memory(),

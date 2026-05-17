@@ -21,6 +21,10 @@ struct SettingsWindowView: View {
             Task {
                 try? await store.checkForUpdates(manual: true)
             }
+        } onResetTrackingData: {
+            store.resetTrackingData()
+        } onResetEverything: {
+            store.resetEverything()
         }
     }
 }

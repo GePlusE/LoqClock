@@ -125,6 +125,23 @@ final class LoqClockStore {
         save()
     }
 
+    func resetTrackingData(now: Date = .now) {
+        createRecoveryBackup(reason: "reset-tracking-data", now: now)
+        entries = []
+        save()
+    }
+
+    func resetEverything(now: Date = .now) {
+        createRecoveryBackup(reason: "reset-everything", now: now)
+        settings = .default
+        settings.launchAtLoginEnabled = launchAtLoginService.currentState()
+        entries = []
+        availableUpdate = nil
+        updateCheckErrorMessage = nil
+        updateCheckStatusMessage = nil
+        save()
+    }
+
     @discardableResult
     func setLaunchAtLoginEnabled(_ enabled: Bool) -> Bool {
         do {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsEditorView: View {
@@ -10,6 +11,8 @@ struct SettingsEditorView: View {
     let onToggleLaunchAtLogin: (Bool) -> Bool
     let onToggleAutomaticUpdates: (Bool) -> Void
     let onManualCheckForUpdates: () -> Void
+    let onResetTrackingData: () -> Void
+    let onResetEverything: () -> Void
 
     @State private var defaultTargetWorkDurationMinutes: Int
     @State private var defaultLunchDurationMinutes: Int
@@ -40,7 +43,9 @@ struct SettingsEditorView: View {
         onSave: @escaping (AppSettings) -> Void,
         onToggleLaunchAtLogin: @escaping (Bool) -> Bool,
         onToggleAutomaticUpdates: @escaping (Bool) -> Void,
-        onManualCheckForUpdates: @escaping () -> Void
+        onManualCheckForUpdates: @escaping () -> Void,
+        onResetTrackingData: @escaping () -> Void,
+        onResetEverything: @escaping () -> Void
     ) {
         self.settings = settings
         self.launchAtLoginErrorMessage = launchAtLoginErrorMessage
@@ -51,6 +56,8 @@ struct SettingsEditorView: View {
         self.onToggleLaunchAtLogin = onToggleLaunchAtLogin
         self.onToggleAutomaticUpdates = onToggleAutomaticUpdates
         self.onManualCheckForUpdates = onManualCheckForUpdates
+        self.onResetTrackingData = onResetTrackingData
+        self.onResetEverything = onResetEverything
         _defaultTargetWorkDurationMinutes = State(initialValue: settings.defaultTargetWorkDurationMinutes)
         _defaultLunchDurationMinutes = State(initialValue: settings.defaultLunchDurationMinutes)
         _launchAtLoginEnabled = State(initialValue: settings.launchAtLoginEnabled)
@@ -212,8 +219,26 @@ struct SettingsEditorView: View {
             }
         case .advanced:
             SettingsSectionContent(title: "Advanced / Data Reset") {
-                Text("Manual reset flows will require an explicit backup prompt and typing RESET before destructive changes.")
+                Text("Reset actions create a local recovery backup first and require typing RESET.")
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Button("Reset Tracking Data", role: .destructive) {
+                        confirmReset(
+                            title: "Reset tracking data?",
+                            message: "This removes all workdays and sessions after creating a recovery backup.",
+                            onConfirm: onResetTrackingData
+                        )
+                    }
+
+                    Button("Reset Everything", role: .destructive) {
+                        confirmReset(
+                            title: "Reset everything?",
+                            message: "This removes tracking data and restores app settings after creating a recovery backup.",
+                            onConfirm: onResetEverything
+                        )
+                    }
+                }
             }
         }
     }
@@ -231,6 +256,24 @@ struct SettingsEditorView: View {
                 onboardingCompleted: settings.onboardingCompleted
             )
         )
+    }
+
+    private func confirmReset(title: String, message: String, onConfirm: () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = "\(message)\n\nType RESET to continue."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Reset")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertSecondButtonReturn,
+              textField.stringValue == "RESET" else {
+            return
+        }
+
+        onConfirm()
     }
 }
 
