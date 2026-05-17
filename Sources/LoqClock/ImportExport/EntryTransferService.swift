@@ -111,13 +111,28 @@ struct EntryTransferService {
         }
 
         let rows = parseCSV(content)
-        guard let header = rows.first, header == csvHeader else {
+        guard let header = rows.first else {
             throw EntryTransferError.invalidCSVHeader
         }
 
-        var entries: [WorkDayEntry] = []
+        if header == legacyCSVHeader {
+            return try importLegacyCSV(rows)
+        }
+
+        guard header == csvHeader else {
+            throw EntryTransferError.invalidCSVHeader
+        }
+
+        return try importSessionCSV(rows)
+    }
+
+    private func importSessionCSV(_ rows: [[String]]) throws -> ImportedEntryPayload {
+        var builders: [LocalDay: CSVEntryBuilder] = [:]
+        var orderedDays: [LocalDay] = []
 
         for (index, row) in rows.dropFirst().enumerated() {
+            let row = normalizedCSVRow(row, expectedCount: csvHeader.count)
+
             if row.allSatisfy(\.isEmpty) {
                 continue
             }
@@ -126,7 +141,67 @@ struct EntryTransferService {
                 throw EntryTransferError.invalidCSVRow(index + 2)
             }
 
-            guard let entry = try makeEntry(from: row) else {
+            let day = try localDay(row[0])
+            let timezoneIdentifier = row[1].isEmpty ? TimeZone.current.identifier : row[1]
+
+            guard let target = Int(row[2]),
+                  let plannedBreak = Int(row[3]) else {
+                throw EntryTransferError.invalidCSVRow(index + 2)
+            }
+
+            let note = WorkDayNote.sanitized(row[4])
+
+            if var existingBuilder = builders[day] {
+                guard existingBuilder.timezoneIdentifier == timezoneIdentifier,
+                      existingBuilder.targetWorkDurationMinutes == target,
+                      existingBuilder.plannedBreakDurationMinutes == plannedBreak,
+                      existingBuilder.note == note else {
+                    throw EntryTransferError.invalidCSVRow(index + 2)
+                }
+
+                if let session = try makeSession(from: row, day: day) {
+                    existingBuilder.sessions.append(session)
+                }
+
+                builders[day] = existingBuilder
+            } else {
+                var builder = CSVEntryBuilder(
+                    day: day,
+                    timezoneIdentifier: timezoneIdentifier,
+                    targetWorkDurationMinutes: target,
+                    plannedBreakDurationMinutes: plannedBreak,
+                    note: note,
+                    sessions: []
+                )
+
+                if let session = try makeSession(from: row, day: day) {
+                    builder.sessions.append(session)
+                }
+
+                builders[day] = builder
+                orderedDays.append(day)
+            }
+        }
+
+        let entries = orderedDays.compactMap { builders[$0]?.makeEntry() }
+        return ImportedEntryPayload(settings: nil, entries: entries)
+    }
+
+    private func importLegacyCSV(_ rows: [[String]]) throws -> ImportedEntryPayload {
+        var entries: [WorkDayEntry] = []
+
+        for (index, row) in rows.dropFirst().enumerated() {
+            let row = normalizedCSVRow(row, expectedCount: legacyCSVHeader.count)
+
+            if row.allSatisfy(\.isEmpty) {
+                continue
+            }
+
+            guard row.count == legacyCSVHeader.count else {
+                throw EntryTransferError.invalidCSVRow(index + 2)
+            }
+
+            guard let entry = try makeLegacyEntry(from: row) else {
                 throw EntryTransferError.invalidCSVRow(index + 2)
             }
 
@@ -138,30 +213,43 @@ struct EntryTransferService {
     }
 
     private func exportCSV(entries: [WorkDayEntry]) -> String {
-        let rows = [csvHeader] + entries.map { entry in
-            [
-                entry.date.id,
-                iso8601String(entry.startTime),
-                iso8601String(entry.endTime),
-                "\(entry.targetWorkDurationMinutes)",
-                "\(entry.lunchDurationMinutes)",
-                breaksJSONString(entry.additionalBreaks),
-                entry.notes ?? ""
-            ]
+        var rows = [csvHeader]
+
+        for entry in entries {
+            let sortedSessions = entry.sessions.sorted { $0.startTimestamp < $1.startTimestamp }
+
+            if sortedSessions.isEmpty {
+                rows.append([
+                    entry.date.id,
+                    entry.timezoneIdentifier,
+                    "\(entry.targetWorkDurationMinutes)",
+                    "\(entry.plannedBreakDurationMinutes)",
+                    entry.notes ?? "",
+                    "",
+                    "",
+                    ""
+                ])
+            } else {
+                for session in sortedSessions {
+                    rows.append([
+                        entry.date.id,
+                        entry.timezoneIdentifier,
+                        "\(entry.targetWorkDurationMinutes)",
+                        "\(entry.plannedBreakDurationMinutes)",
+                        entry.notes ?? "",
+                        session.id.uuidString,
+                        iso8601String(session.startTimestamp),
+                        iso8601String(session.endTimestamp)
+                    ])
+                }
+            }
         }
 
         return rows.map(csvLine).joined(separator: "\n")
     }
 
-    private func makeEntry(from row: [String]) throws -> WorkDayEntry? {
-        let dateValue = row[0]
-        let dateParts = dateValue.split(separator: "-").map(String.init)
-        guard dateParts.count == 3,
-              let year = Int(dateParts[0]),
-              let month = Int(dateParts[1]),
-              let day = Int(dateParts[2]) else {
-            throw EntryTransferError.invalidDate(dateValue)
-        }
+    private func makeLegacyEntry(from row: [String]) throws -> WorkDayEntry? {
+        let day = try localDay(row[0])
 
         guard let target = Int(row[3]),
               let lunch = Int(row[4]) else {
@@ -169,7 +257,7 @@ struct EntryTransferService {
         }
 
         return WorkDayEntry(
-            date: LocalDay(year: year, month: month, day: day),
+            date: day,
             startTime: try iso8601Date(row[1]),
             endTime: try iso8601Date(row[2]),
             targetWorkDurationMinutes: target,
@@ -177,6 +265,60 @@ struct EntryTransferService {
             additionalBreaks: try decodeBreaks(row[5]),
             notes: row[6].isEmpty ? nil : row[6]
         )
+    }
+
+    private func makeSession(from row: [String], day: LocalDay) throws -> WorkSession? {
+        let sessionID = row[5]
+        let startValue = row[6]
+        let endValue = row[7]
+
+        if sessionID.isEmpty && startValue.isEmpty && endValue.isEmpty {
+            return nil
+        }
+
+        guard let start = try iso8601Date(startValue) else {
+            throw EntryTransferError.invalidCSVRow(0)
+        }
+
+        return WorkSession(
+            id: UUID(uuidString: sessionID) ?? UUID(),
+            assignedWorkDayDate: day,
+            startTimestamp: start,
+            endTimestamp: try iso8601Date(endValue)
+        )
+    }
+
+    private func localDay(_ value: String) throws -> LocalDay {
+        let dateParts = value.split(separator: "-").map(String.init)
+        guard dateParts.count == 3,
+              let year = Int(dateParts[0]),
+              let month = Int(dateParts[1]),
+              let day = Int(dateParts[2]) else {
+            throw EntryTransferError.invalidDate(value)
+        }
+
+        return LocalDay(year: year, month: month, day: day)
+    }
+
+    private struct CSVEntryBuilder {
+        var day: LocalDay
+        var timezoneIdentifier: String
+        var targetWorkDurationMinutes: Int
+        var plannedBreakDurationMinutes: Int
+        var note: String?
+        var sessions: [WorkSession]
+
+        func makeEntry() -> WorkDayEntry {
+            WorkDayEntry(
+                date: day,
+                timezoneIdentifier: timezoneIdentifier,
+                targetWorkDurationMinutes: targetWorkDurationMinutes,
+                lunchDurationMinutes: plannedBreakDurationMinutes,
+                additionalBreaks: [],
+                notes: note,
+                sessions: sessions.sorted { $0.startTimestamp < $1.startTimestamp }
+            )
+        }
     }
 
     private func validateUniqueDates(in entries: [WorkDayEntry]) throws {
@@ -256,6 +398,16 @@ struct EntryTransferService {
             .joined(separator: ",")
     }
 
+    private func normalizedCSVRow(_ row: [String], expectedCount: Int) -> [String] {
+        let trimmed = row.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        guard trimmed.count < expectedCount else {
+            return trimmed
+        }
+
+        return trimmed + Array(repeating: "", count: expectedCount - trimmed.count)
+    }
+
     private func breaksJSONString(_ breaks: [WorkBreak]) -> String {
         let compactEncoder = JSONEncoder()
         compactEncoder.outputFormatting = [.sortedKeys]
@@ -307,6 +459,19 @@ struct EntryTransferService {
     }
 
     private var csvHeader: [String] {
+        [
+            "date",
+            "timezone_identifier",
+            "target_work_duration_minutes",
+            "planned_break_duration_minutes",
+            "note",
+            "session_id",
+            "session_start_timestamp",
+            "session_end_timestamp"
+        ]
+    }
+
+    private var legacyCSVHeader: [String] {
         [
             "date",
             "start_time",

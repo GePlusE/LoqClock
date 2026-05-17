@@ -228,7 +228,6 @@ struct WorkDayEntry: Codable, Equatable, Identifiable, Sendable {
         try container.encode(timezoneIdentifier, forKey: .timezoneIdentifier)
         try container.encode(targetWorkDurationMinutes, forKey: .targetWorkDurationMinutes)
         try container.encode(plannedBreakDurationMinutes, forKey: .plannedBreakDurationMinutes)
-        try container.encode(additionalBreaks, forKey: .additionalBreaks)
         try container.encodeIfPresent(note, forKey: .note)
         try container.encode(sessions.sorted { $0.startTimestamp < $1.startTimestamp }, forKey: .sessions)
         try container.encode(isExplicitEmptyDay, forKey: .isExplicitEmptyDay)
